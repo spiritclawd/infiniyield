@@ -9,38 +9,38 @@
  */
 
 import { 
-  StarkZap, 
-  OnboardStrategy, 
-  StarkSigner, 
-  Amount, 
+  StarkZap,
+  StarkSigner,
+  OnboardStrategy,
+  Amount,
   fromAddress,
-  mainnetTokens,
-  sepoliaTokens,
-  type Wallet,
+  type WalletInterface,
   type Token,
+  type Address,
 } from 'starkzap';
+import { mainnetTokens, sepoliaTokens } from 'starkzap';
 
 // Network configuration
 export type Network = 'mainnet' | 'sepolia';
 
-// Token addresses on Starknet
+// Token addresses on Starknet (wBTC is the wrapped Bitcoin)
 export const TOKENS = {
   mainnet: {
-    BTC: mainnetTokens.BTC, // wBTC wrapper
+    BTC: mainnetTokens.WBTC, // wBTC wrapper (wrapped Bitcoin)
     ETH: mainnetTokens.ETH,
     USDC: mainnetTokens.USDC,
     STRK: mainnetTokens.STRK,
   },
   sepolia: {
-    BTC: sepoliaTokens.BTC,
+    BTC: sepoliaTokens.WBTC, // wBTC on testnet
     ETH: sepoliaTokens.ETH,
     USDC: sepoliaTokens.USDC,
     STRK: sepoliaTokens.STRK,
   },
 };
 
-// Endurance validator for BTC staking
-const ENDURANCE_VALIDATOR = 'ENDURANCE';
+// Endurance validator address for BTC staking (placeholder - replace with actual validator address)
+const getEnduranceValidator = (): Address => fromAddress('0x054f9adf425f006a2c332c0c3b0c7e2e4e9e2e8e7e6e5e4e3e2e1e0e9e8e7e6e');
 
 /**
  * InfiniYieldSDK - Main class for platform integration
@@ -55,7 +55,7 @@ const ENDURANCE_VALIDATOR = 'ENDURANCE';
 export class InfiniYieldSDK {
   private starkzap: StarkZap;
   private network: Network;
-  private wallet: Wallet | null = null;
+  private wallet: WalletInterface | null = null;
 
   constructor(network: Network = 'mainnet') {
     this.network = network;
@@ -66,7 +66,7 @@ export class InfiniYieldSDK {
    * Connect wallet using Cartridge Controller
    * This provides seamless UX with session keys and gasless transactions
    */
-  async connectWallet(): Promise<Wallet> {
+  async connectWallet(): Promise<WalletInterface> {
     const result = await this.starkzap.onboard({
       strategy: OnboardStrategy.Cartridge,
       deploy: 'if_needed',
@@ -79,21 +79,20 @@ export class InfiniYieldSDK {
   /**
    * Connect with private key (for testing/backend)
    */
-  async connectWithPrivateKey(privateKey: string): Promise<Wallet> {
-    const result = await this.starkzap.onboard({
-      strategy: OnboardStrategy.Signer,
+  async connectWithPrivateKey(privateKey: string): Promise<WalletInterface> {
+    const result = await this.starkzap.connectWallet({
       account: { signer: new StarkSigner(privateKey) },
-      deploy: 'if_needed',
     });
     
-    this.wallet = result.wallet;
+    await result.ensureReady({ deploy: 'if_needed' });
+    this.wallet = result;
     return this.wallet;
   }
 
   /**
    * Get connected wallet address
    */
-  getAddress(): string {
+  getAddress(): Address {
     if (!this.wallet) throw new Error('Wallet not connected');
     return this.wallet.address;
   }
@@ -105,7 +104,7 @@ export class InfiniYieldSDK {
     if (!this.wallet) throw new Error('Wallet not connected');
     const token = TOKENS[this.network].BTC;
     const balance = await this.wallet.balanceOf(token);
-    return balance.toBigInt();
+    return balance.toBase();
   }
 
   /**
@@ -132,11 +131,11 @@ export class InfiniYieldSDK {
     const amount = Amount.parse(amountBTC, token);
 
     // Stake via Endurance validator (4-6% APY on BTC)
-    const tx = await this.starkzap.stake(amount.toBigInt(), {
-      validator: ENDURANCE_VALIDATOR,
-    });
+    const staking = await this.wallet.stakingInStaker(getEnduranceValidator(), token);
+    const tx = await staking.stake(this.wallet, amount);
 
-    return tx.transactionHash;
+    await tx.wait();
+    return tx.hash;
   }
 
   /**
@@ -148,38 +147,44 @@ export class InfiniYieldSDK {
     const token = TOKENS[this.network].BTC;
     const amount = Amount.parse(amountBTC, token);
 
-    const tx = await this.starkzap.unstake(amount.toBigInt(), {
-      validator: ENDURANCE_VALIDATOR,
-    });
-
-    return tx.transactionHash;
+    const staking = await this.wallet.stakingInStaker(getEnduranceValidator(), token);
+    
+    // Initiate exit intent
+    const exitTx = await staking.exitIntent(this.wallet, amount);
+    await exitTx.wait();
+    
+    return exitTx.hash;
   }
 
   /**
    * Transfer BTC to a recipient
    * Used for entry fee payments to vault
    */
-  async transferBTC(recipient: string, amountBTC: string): Promise<string> {
+  async transferBTC(recipient: Address, amountBTC: string): Promise<string> {
     if (!this.wallet) throw new Error('Wallet not connected');
     
     const token = TOKENS[this.network].BTC;
     const amount = Amount.parse(amountBTC, token);
 
     const tx = await this.wallet.transfer(token, [
-      { to: fromAddress(recipient), amount },
+      { to: recipient, amount },
     ]);
 
     await tx.wait();
-    return tx.transactionHash;
+    return tx.hash;
   }
 
   /**
    * Pay entry fee with automatic split routing
    * 90% to vault, 10% to platform
+   * 
+   * This is the core money flow function that routes:
+   * - Entry fee → 90% to Vault address (for staking/yield)
+   * - Entry fee → 10% to Platform address (treasury)
    */
   async payEntryFee(
-    vaultAddress: string,
-    platformAddress: string,
+    vaultAddress: Address,
+    platformAddress: Address,
     amountBTC: string,
   ): Promise<{ txHash: string; vaultAmount: string; platformAmount: string }> {
     if (!this.wallet) throw new Error('Wallet not connected');
@@ -188,21 +193,25 @@ export class InfiniYieldSDK {
     const totalAmount = Amount.parse(amountBTC, token);
     
     // Calculate split: 90% vault, 10% platform
-    const vaultAmount = totalAmount.toBigInt() * 90n / 100n;
-    const platformAmount = totalAmount.toBigInt() * 10n / 100n;
+    const totalSatoshis = totalAmount.toBase();
+    const vaultSatoshis = (totalSatoshis * 90n) / 100n;
+    const platformSatoshis = (totalSatoshis * 10n) / 100n;
+    
+    const vaultAmount = Amount.fromRaw(vaultSatoshis, token);
+    const platformAmount = Amount.fromRaw(platformSatoshis, token);
 
-    // Build multi-transfer transaction
+    // Build multi-transfer transaction (atomic split)
     const tx = await this.wallet.transfer(token, [
-      { to: fromAddress(vaultAddress), amount: Amount.fromBigInt(vaultAmount, token) },
-      { to: fromAddress(platformAddress), amount: Amount.fromBigInt(platformAmount, token) },
+      { to: vaultAddress, amount: vaultAmount },
+      { to: platformAddress, amount: platformAmount },
     ]);
 
     await tx.wait();
     
     return {
-      txHash: tx.transactionHash,
-      vaultAmount: Amount.fromBigInt(vaultAmount, token).toFormatted(),
-      platformAmount: Amount.fromBigInt(platformAmount, token).toFormatted(),
+      txHash: tx.hash,
+      vaultAmount: vaultAmount.toFormatted(),
+      platformAmount: platformAmount.toFormatted(),
     };
   }
 
@@ -214,20 +223,27 @@ export class InfiniYieldSDK {
     rewards: bigint;
     apy: number;
   }> {
-    // In production, query from Endurance staking contract
-    // For now, return mock data
+    if (!this.wallet) throw new Error('Wallet not connected');
+    
+    const token = TOKENS[this.network].BTC;
+    const staking = await this.wallet.stakingInStaker(getEnduranceValidator(), token);
+    const position = await staking.getPosition(this.wallet);
+    
     return {
-      staked: 0n,
-      rewards: 0n,
-      apy: 0.05, // 5% APY
+      staked: position?.staked.toBase() ?? 0n,
+      rewards: position?.rewards.toBase() ?? 0n,
+      apy: 0.05, // 5% APY (can be fetched from validator)
     };
   }
 
   /**
    * Disconnect wallet
    */
-  disconnect(): void {
-    this.wallet = null;
+  async disconnect(): Promise<void> {
+    if (this.wallet) {
+      await this.wallet.disconnect();
+      this.wallet = null;
+    }
   }
 
   /**
