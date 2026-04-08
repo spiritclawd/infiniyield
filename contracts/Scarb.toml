@@ -1,0 +1,20 @@
+[package]
+name = "infiniyield"
+version = "0.1.0"
+edition = "2024_07"
+
+[dependencies]
+starknet = ">=2.6.0"
+openzeppelin_token = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v3.0.0" }
+openzeppelin_access = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v3.0.0" }
+openzeppelin_introspection = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v3.0.0" }
+openzeppelin_interfaces = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v3.0.0" }
+
+[dev-dependencies]
+cairo_test = "2.13.1"
+# To use snforge for integration tests (requires cargo/rust installed):
+# snforge_std = { git = "https://github.com/foundry-rs/starknet-foundry.git", tag = "v0.51.2" }
+
+[[target.starknet-contract]]
+sierra = true
+casm = true
