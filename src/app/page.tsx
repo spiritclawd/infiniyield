@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import VaultSimulator from '@/components/VaultSimulator';
 import { useVaultStore } from '@/store/game-store';
 import {
   formatBTC,
@@ -686,7 +687,57 @@ export default function Home() {
       </section>
 
       {/* ============================================================
-          SECTION 4: VAULT ENTRY
+          SECTION 4: HOW WINNING WORKS — video + simulator
+          ============================================================ */}
+      <section style={{ padding: '100px 24px', background: '#07080F' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+
+          {/* Header */}
+          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+            <p style={{ color: '#6C5CE7', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
+              Mechanics
+            </p>
+            <h2 style={{ fontSize: 'clamp(28px, 5vw, 48px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '12px' }}>
+              How Winning Works
+            </h2>
+            <p style={{ color: '#64748B', fontSize: '16px' }}>
+              Score = principal × time. Commit more, commit earlier. The deepest whale wins.
+            </p>
+          </div>
+
+          {/* Video embed */}
+          <div style={{
+            position: 'relative',
+            width: '100%',
+            background: '#0D0F1A',
+            border: '1px solid #1E2035',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            marginBottom: '48px',
+            aspectRatio: '16/9',
+          }}>
+            <video
+              controls
+              autoPlay={false}
+              muted
+              playsInline
+              loop={false}
+              style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+              poster=""
+            >
+              <source src="/infiniyield/winning.mp4" type="video/mp4" />
+              Your browser does not support video.
+            </video>
+          </div>
+
+          {/* Simulator */}
+          <VaultSimulator />
+
+        </div>
+      </section>
+
+      {/* ============================================================
+          SECTION 5: VAULT ENTRY
           ============================================================ */}
       <section
         ref={depositSectionRef}
