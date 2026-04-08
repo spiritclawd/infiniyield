@@ -9,22 +9,23 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@cartridge/controller": "^0.13.11",
     "next": "^15.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "starkzap": "^1.0.0",
     "starknet": "^9.2.1",
+    "starkzap": "^1.0.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5",
-    "tailwindcss": "^4",
-    "@tailwindcss/postcss": "^4",
-    "postcss": "^8",
     "eslint": "^9",
-    "eslint-config-next": "^15.2.4"
+    "eslint-config-next": "^15.2.4",
+    "postcss": "^8",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }

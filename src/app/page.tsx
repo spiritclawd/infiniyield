@@ -17,18 +17,20 @@ import {
   CONTRACT,
 } from '@/lib/money-flow';
 import {
-  connectWallet,
+  connectCartridge,
+  disconnectCartridge,
   fetchSeasonData,
   fetchDepositorInfo,
   fetchLeaderboard,
-  fetchWBTCBalance,
-  fetchIYBalance,
+  fetchTokenBalance,
   depositWBTC,
   claimYield,
   harvestYield,
+  mintMockWBTC,
   CONTRACT_ADDRESSES,
+  CONTRACTS_DEPLOYED,
 } from '@/lib/vault-client';
-import type { WalletInterface } from 'starkzap';
+import type ControllerProvider from '@cartridge/controller';
 
 // =====================================================================
 //  Constants
@@ -36,7 +38,6 @@ import type { WalletInterface } from 'starkzap';
 
 const BTC_PRICE_USD = 97000; // TODO: fetch from CoinGecko
 const IS_TESTNET = process.env.NEXT_PUBLIC_NETWORK !== 'mainnet';
-const CONTRACTS_DEPLOYED = CONTRACT_ADDRESSES.vault !== '0x0';
 
 // =====================================================================
 //  Sub-components
@@ -147,7 +148,7 @@ export default function Home() {
     setLeaderboard, setLeaderboardLoading, setTx, clearTx, setLastRefreshed,
   } = useVaultStore();
 
-  const [walletInterface, setWalletInterface] = useState<WalletInterface | null>(null);
+  const [controller, setController] = useState<ControllerProvider | null>(null);
   const [depositInput, setDepositInput] = useState('');
   const [activeTab, setActiveTab] = useState<'deposit' | 'leaderboard' | 'yield'>('deposit');
 
@@ -159,6 +160,7 @@ export default function Home() {
     if (!CONTRACTS_DEPLOYED) return;
     try {
       const s = await fetchSeasonData();
+      if (!s) return;
       setSeason(s);
 
       const lb = await fetchLeaderboard();
@@ -168,8 +170,10 @@ export default function Home() {
       if (wallet.address) {
         const info = await fetchDepositorInfo(wallet.address);
         setDepositorInfo(info);
-        const wbtcBal = await fetchWBTCBalance(wallet.address);
-        const iyBal = await fetchIYBalance(wallet.address);
+        const [wbtcBal, iyBal] = await Promise.all([
+          fetchTokenBalance(CONTRACT_ADDRESSES.wbtc, wallet.address),
+          fetchTokenBalance(CONTRACT_ADDRESSES.iyToken, wallet.address),
+        ]);
         setWallet({ wbtcBalance: wbtcBal, iyBalance: iyBal });
       }
       setLastRefreshed(Date.now());
@@ -191,8 +195,8 @@ export default function Home() {
   const handleConnect = async () => {
     setWallet({ loading: true });
     try {
-      const { address, wallet: w } = await connectWallet();
-      setWalletInterface(w);
+      const { address, controller: ctrl } = await connectCartridge();
+      setController(ctrl);
       setWallet({ connected: true, address, loading: false });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -206,19 +210,17 @@ export default function Home() {
   // ------------------------------------------------------------------
 
   const handleDeposit = async () => {
-    if (!walletInterface || !depositInput) return;
+    if (!controller || !depositInput) return;
     const amountSats = formatBTCInput(depositInput);
     if (amountSats <= 0n) return;
-
     setTx({ pending: true, error: null, hash: null });
     try {
-      const hash = await depositWBTC(walletInterface, amountSats);
+      const hash = await depositWBTC(controller, amountSats);
       setTx({ pending: false, hash });
       setDepositInput('');
       setTimeout(refreshChainData, 2000);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setTx({ pending: false, error: msg });
+      setTx({ pending: false, error: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -227,15 +229,14 @@ export default function Home() {
   // ------------------------------------------------------------------
 
   const handleClaim = async () => {
-    if (!walletInterface) return;
+    if (!controller) return;
     setTx({ pending: true, error: null, hash: null });
     try {
-      const hash = await claimYield(walletInterface);
+      const hash = await claimYield(controller);
       setTx({ pending: false, hash });
       setTimeout(refreshChainData, 2000);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setTx({ pending: false, error: msg });
+      setTx({ pending: false, error: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -244,15 +245,31 @@ export default function Home() {
   // ------------------------------------------------------------------
 
   const handleHarvest = async () => {
-    if (!walletInterface) return;
+    if (!controller) return;
     setTx({ pending: true, error: null, hash: null });
     try {
-      const hash = await harvestYield(walletInterface);
+      const hash = await harvestYield(controller);
       setTx({ pending: false, hash });
       setTimeout(refreshChainData, 2000);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setTx({ pending: false, error: msg });
+      setTx({ pending: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  // ------------------------------------------------------------------
+  //  Mint mock wBTC (testnet only)
+  // ------------------------------------------------------------------
+
+  const handleMintWBTC = async () => {
+    if (!controller || !wallet.address) return;
+    setTx({ pending: true, error: null, hash: null });
+    try {
+      // Mint 0.01 BTC (1_000_000 sats) for testing
+      const hash = await mintMockWBTC(controller, wallet.address, 1_000_000n);
+      setTx({ pending: false, hash });
+      setTimeout(refreshChainData, 2000);
+    } catch (e: unknown) {
+      setTx({ pending: false, error: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -308,7 +325,7 @@ export default function Home() {
                 <p className="text-xs text-orange-400 font-mono">{formatBTC(wallet.wbtcBalance)} wBTC</p>
               </div>
               <button
-                onClick={() => { setWalletInterface(null); disconnectWallet(); }}
+                onClick={() => { disconnectCartridge(); setController(null); disconnectWallet(); }}
                 className="text-xs text-slate-400 hover:text-slate-200 border border-white/10 rounded px-3 py-1.5"
               >
                 Disconnect
@@ -455,6 +472,17 @@ export default function Home() {
                 >
                   {!wallet.connected ? 'Connect wallet first' : 'Lock wBTC Forever'}
                 </button>
+
+                {IS_TESTNET && wallet.connected && (
+                  <button
+                    onClick={handleMintWBTC}
+                    disabled={tx.pending}
+                    className="rounded-lg border border-white/10 hover:bg-white/10 py-2 text-xs text-slate-400 transition-colors"
+                    title="Mint 0.01 mock wBTC for testing"
+                  >
+                    🚰 Get 0.01 test wBTC (faucet)
+                  </button>
+                )}
               </div>
 
               {/* My position */}
