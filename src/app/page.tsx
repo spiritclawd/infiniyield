@@ -1,18 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useVaultStore } from '@/store/game-store';
 import {
   formatBTC,
   formatSats,
   formatScore,
-  formatAddress,
-  formatUSD,
   formatBTCInput,
   getTop10YieldShares,
-  getDepositorProRataShare,
   getClaimBreakdown,
-  getSeasonProgress,
   getIYMintAmount,
   CONTRACT,
 } from '@/lib/money-flow';
@@ -31,110 +27,24 @@ import {
   CONTRACTS_DEPLOYED,
 } from '@/lib/vault-client';
 import type ControllerProvider from '@cartridge/controller';
+import WhaleAsset from '@/components/WhaleAsset';
+import BitcoinGlow from '@/components/BitcoinGlow';
+import BubbleField from '@/components/BubbleField';
+import DepthLines from '@/components/DepthLines';
 
 // =====================================================================
-//  Constants
+//  Helpers
 // =====================================================================
 
-const BTC_PRICE_USD = 97000; // TODO: fetch from CoinGecko
-const IS_TESTNET = process.env.NEXT_PUBLIC_NETWORK !== 'mainnet';
-
-// =====================================================================
-//  Sub-components
-// =====================================================================
-
-function StatCard({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  accent?: 'orange' | 'green' | 'purple';
-}) {
-  const color =
-    accent === 'orange' ? 'text-orange-400' :
-    accent === 'green'  ? 'text-emerald-400' :
-                          'text-violet-400';
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/5 p-5 flex flex-col gap-1">
-      <span className="text-xs text-slate-400 uppercase tracking-wider">{label}</span>
-      <span className={`text-2xl font-bold font-mono ${color}`}>{value}</span>
-      {sub && <span className="text-xs text-slate-500">{sub}</span>}
-    </div>
-  );
+function truncate(addr: string): string {
+  if (!addr || addr.length < 12) return addr;
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
-function SeasonBar({ pct, isOver }: { pct: number; isOver: boolean }) {
-  return (
-    <div className="w-full">
-      <div className="flex justify-between text-xs text-slate-400 mb-1">
-        <span>Season progress</span>
-        <span>{isOver ? 'ENDED — call end_season()' : `${pct}%`}</span>
-      </div>
-      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${isOver ? 'bg-red-500' : 'bg-violet-500'}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function RankBadge({ rank }: { rank: number }) {
-  const label = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
-  return <span className="font-mono text-sm">{label}</span>;
-}
-
-function TxOverlay({ pending, hash, error, onClose }: {
-  pending: boolean;
-  hash: string | null;
-  error: string | null;
-  onClose: () => void;
-}) {
-  if (!pending && !hash && !error) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="rounded-2xl border border-white/10 bg-[#12121a] p-8 max-w-sm w-full mx-4 flex flex-col gap-4">
-        {pending && (
-          <>
-            <div className="w-12 h-12 mx-auto rounded-full border-4 border-violet-500/30 border-t-violet-500 animate-spin" />
-            <p className="text-center text-slate-300">Confirming on-chain…</p>
-          </>
-        )}
-        {hash && !pending && (
-          <>
-            <div className="w-12 h-12 mx-auto text-3xl text-center">✅</div>
-            <p className="text-center text-emerald-400 font-semibold">Transaction confirmed</p>
-            <a
-              href={`https://sepolia.voyager.online/tx/${hash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-center text-violet-400 hover:underline break-all"
-            >
-              {hash}
-            </a>
-            <button onClick={onClose} className="mt-2 rounded-lg bg-white/10 hover:bg-white/20 py-2 text-sm">
-              Close
-            </button>
-          </>
-        )}
-        {error && (
-          <>
-            <div className="w-12 h-12 mx-auto text-3xl text-center">❌</div>
-            <p className="text-center text-red-400 font-semibold">Error</p>
-            <p className="text-xs text-center text-slate-400 break-words">{error}</p>
-            <button onClick={onClose} className="mt-2 rounded-lg bg-white/10 hover:bg-white/20 py-2 text-sm">
-              Dismiss
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
+function satsToBTCDisplay(sats: bigint): string {
+  if (sats === 0n) return '0.00000000';
+  const btc = Number(sats) / 1e8;
+  return btc.toFixed(8);
 }
 
 // =====================================================================
@@ -143,144 +53,189 @@ function TxOverlay({ pending, hash, error, onClose }: {
 
 export default function Home() {
   const {
-    wallet, season, depositorInfo, leaderboard, leaderboardLoading, tx,
-    setWallet, disconnectWallet, setSeason, setDepositorInfo,
-    setLeaderboard, setLeaderboardLoading, setTx, clearTx, setLastRefreshed,
+    wallet,
+    season,
+    depositorInfo,
+    leaderboard,
+    leaderboardLoading,
+    tx,
+    setWallet,
+    disconnectWallet,
+    setSeason,
+    setDepositorInfo,
+    setLeaderboard,
+    setLeaderboardLoading,
+    setTx,
+    clearTx,
+    setLastRefreshed,
   } = useVaultStore();
 
-  const [controller, setController] = useState<ControllerProvider | null>(null);
-  const [depositInput, setDepositInput] = useState('');
-  const [activeTab, setActiveTab] = useState<'deposit' | 'leaderboard' | 'yield'>('deposit');
+  // depositAmount stays as raw string; we derive sats via formatBTCInput
+  const [depositAmountStr, setDepositAmountStr] = useState('');
+  const [controllerRef, setControllerRef] = useState<ControllerProvider | null>(null);
+  const depositSectionRef = useRef<HTMLDivElement>(null);
 
-  // ------------------------------------------------------------------
-  //  Data refresh
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
+  //  Data loading
+  // ---------------------------------------------------------------
 
-  const refreshChainData = useCallback(async () => {
+  const loadPublicData = useCallback(async () => {
     if (!CONTRACTS_DEPLOYED) return;
     try {
-      const s = await fetchSeasonData();
-      if (!s) return;
-      setSeason(s);
-
-      const lb = await fetchLeaderboard();
+      setLeaderboardLoading(true);
+      const [seasonData, lb] = await Promise.all([
+        fetchSeasonData(),
+        fetchLeaderboard(),
+      ]);
+      if (seasonData) setSeason(seasonData);
       setLeaderboard(lb);
-      setLeaderboardLoading(false);
-
-      if (wallet.address) {
-        const info = await fetchDepositorInfo(wallet.address);
-        setDepositorInfo(info);
-        const [wbtcBal, iyBal] = await Promise.all([
-          fetchTokenBalance(CONTRACT_ADDRESSES.wbtc, wallet.address),
-          fetchTokenBalance(CONTRACT_ADDRESSES.iyToken, wallet.address),
-        ]);
-        setWallet({ wbtcBalance: wbtcBal, iyBalance: iyBal });
-      }
       setLastRefreshed(Date.now());
     } catch (e) {
-      console.error('Chain data refresh failed:', e);
+      console.error('Failed to load public data', e);
+    } finally {
+      setLeaderboardLoading(false);
     }
-  }, [wallet.address]); // eslint-disable-line
+  }, [setSeason, setLeaderboard, setLastRefreshed, setLeaderboardLoading]);
+
+  const loadUserData = useCallback(async (address: string) => {
+    if (!CONTRACTS_DEPLOYED) return;
+    try {
+      const [info, wbtc, iy] = await Promise.all([
+        fetchDepositorInfo(address),
+        fetchTokenBalance(CONTRACT_ADDRESSES.wbtc, address),
+        fetchTokenBalance(CONTRACT_ADDRESSES.iyToken, address),
+      ]);
+      setDepositorInfo(info);
+      setWallet({ wbtcBalance: wbtc, iyBalance: iy });
+    } catch (e) {
+      console.error('Failed to load user data', e);
+    }
+  }, [setDepositorInfo, setWallet]);
 
   useEffect(() => {
-    refreshChainData();
-    const interval = setInterval(refreshChainData, 30_000);
+    loadPublicData();
+    const interval = setInterval(loadPublicData, 30_000);
     return () => clearInterval(interval);
-  }, [refreshChainData]);
+  }, [loadPublicData]);
 
-  // ------------------------------------------------------------------
-  //  Wallet
-  // ------------------------------------------------------------------
+  useEffect(() => {
+    if (wallet.connected && wallet.address) {
+      loadUserData(wallet.address);
+    }
+  }, [wallet.connected, wallet.address, loadUserData]);
+
+  // ---------------------------------------------------------------
+  //  Wallet actions
+  // ---------------------------------------------------------------
 
   const handleConnect = async () => {
-    setWallet({ loading: true });
     try {
-      const { address, controller: ctrl } = await connectCartridge();
-      setController(ctrl);
+      setWallet({ loading: true });
+      const { controller, address } = await connectCartridge();
+      setControllerRef(controller);
       setWallet({ connected: true, address, loading: false });
+    } catch (e) {
+      console.error('Connect failed', e);
+      setWallet({ loading: false });
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await disconnectCartridge();
+    } catch { /* ignore */ }
+    disconnectWallet();
+    setControllerRef(null);
+  };
+
+  // ---------------------------------------------------------------
+  //  Mint faucet
+  // ---------------------------------------------------------------
+
+  const FAUCET_AMOUNT_SATS = 100_000n; // 0.001 wBTC test amount
+
+  const handleMint = async () => {
+    if (!controllerRef || !wallet.address) return;
+    setTx({ pending: true, hash: null, error: null });
+    try {
+      const hash = await mintMockWBTC(controllerRef, wallet.address, FAUCET_AMOUNT_SATS);
+      setTx({ pending: false, hash });
+      await loadUserData(wallet.address);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setWallet({ loading: false });
-      setTx({ error: msg });
+      setTx({ pending: false, hash: null, error: msg });
     }
   };
 
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
   //  Deposit
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
 
   const handleDeposit = async () => {
-    if (!controller || !depositInput) return;
-    const amountSats = formatBTCInput(depositInput);
-    if (amountSats <= 0n) return;
-    setTx({ pending: true, error: null, hash: null });
+    if (!controllerRef || !depositAmountStr) return;
+    const sats = formatBTCInput(depositAmountStr);
+    if (sats === 0n) return;
+
+    setTx({ pending: true, hash: null, error: null });
     try {
-      const hash = await depositWBTC(controller, amountSats);
+      // depositWBTC(controller, amountSats) — 2 args
+      const hash = await depositWBTC(controllerRef, sats);
       setTx({ pending: false, hash });
-      setDepositInput('');
-      setTimeout(refreshChainData, 2000);
+      setDepositAmountStr('');
+      await loadPublicData();
+      if (wallet.address) await loadUserData(wallet.address);
     } catch (e: unknown) {
-      setTx({ pending: false, error: e instanceof Error ? e.message : String(e) });
+      const msg = e instanceof Error ? e.message : String(e);
+      setTx({ pending: false, hash: null, error: msg });
     }
   };
 
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
   //  Claim
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
 
   const handleClaim = async () => {
-    if (!controller) return;
-    setTx({ pending: true, error: null, hash: null });
+    if (!controllerRef) return;
+    setTx({ pending: true, hash: null, error: null });
     try {
-      const hash = await claimYield(controller);
+      // claimYield(controller) — 1 arg
+      const hash = await claimYield(controllerRef);
       setTx({ pending: false, hash });
-      setTimeout(refreshChainData, 2000);
+      if (wallet.address) await loadUserData(wallet.address);
     } catch (e: unknown) {
-      setTx({ pending: false, error: e instanceof Error ? e.message : String(e) });
+      const msg = e instanceof Error ? e.message : String(e);
+      setTx({ pending: false, hash: null, error: msg });
     }
   };
 
-  // ------------------------------------------------------------------
-  //  Harvest
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
+  //  Harvest (seasonal)
+  // ---------------------------------------------------------------
 
   const handleHarvest = async () => {
-    if (!controller) return;
-    setTx({ pending: true, error: null, hash: null });
+    if (!controllerRef) return;
+    setTx({ pending: true, hash: null, error: null });
     try {
-      const hash = await harvestYield(controller);
+      // harvestYield(controller) — 1 arg
+      const hash = await harvestYield(controllerRef);
       setTx({ pending: false, hash });
-      setTimeout(refreshChainData, 2000);
+      await loadPublicData();
     } catch (e: unknown) {
-      setTx({ pending: false, error: e instanceof Error ? e.message : String(e) });
+      const msg = e instanceof Error ? e.message : String(e);
+      setTx({ pending: false, hash: null, error: msg });
     }
   };
 
-  // ------------------------------------------------------------------
-  //  Mint mock wBTC (testnet only)
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
+  //  Computed values
+  // ---------------------------------------------------------------
 
-  const handleMintWBTC = async () => {
-    if (!controller || !wallet.address) return;
-    setTx({ pending: true, error: null, hash: null });
-    try {
-      // Mint 0.01 BTC (1_000_000 sats) for testing
-      const hash = await mintMockWBTC(controller, wallet.address, 1_000_000n);
-      setTx({ pending: false, hash });
-      setTimeout(refreshChainData, 2000);
-    } catch (e: unknown) {
-      setTx({ pending: false, error: e instanceof Error ? e.message : String(e) });
-    }
-  };
+  const depositSats = formatBTCInput(depositAmountStr);
+  const iyToMint = depositSats > 0n ? getIYMintAmount(depositSats) : 0n;
 
-  // ------------------------------------------------------------------
-  //  Derived state
-  // ------------------------------------------------------------------
+  const yieldShares = getTop10YieldShares(season.yieldPool, leaderboard.length);
 
-  const seasonProgress = getSeasonProgress(season.currentBlock, season.seasonStartBlock);
-  const depositSats = formatBTCInput(depositInput);
-  const iyPreview = depositSats > 0n ? getIYMintAmount(depositSats) : null;
-
+  // getClaimBreakdown(claimableYield, currentBlock, lastClaimBlock)
   const claimBreakdown = depositorInfo
     ? getClaimBreakdown(
         depositorInfo.claimable_yield,
@@ -289,434 +244,777 @@ export default function Home() {
       )
     : null;
 
-  const yieldShares = getTop10YieldShares(season.yieldPool);
+  const totalDepositors = leaderboard.length;
 
-  const proRataShare = depositorInfo
-    ? getDepositorProRataShare(depositorInfo.principal, season.totalDeposited, season.yieldPool)
-    : 0n;
+  // Max score for depth bars
+  const maxScore = leaderboard.length > 0
+    ? leaderboard.reduce((m, e) => (e.score > m ? e.score : m), 1n)
+    : 1n;
 
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
   //  Render
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-slate-100">
-      <TxOverlay
-        pending={tx.pending}
-        hash={tx.hash}
-        error={tx.error}
-        onClose={clearTx}
-      />
+    <div style={{ background: '#07080F', minHeight: '100vh', color: '#F8FAFC' }}>
 
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0a0a0f]/80 backdrop-blur">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl font-black tracking-tight">∞ INFINIYIELD</span>
-            <span className="hidden sm:inline text-xs text-slate-500 border border-white/10 rounded px-2 py-0.5">
-              {IS_TESTNET ? 'SEPOLIA' : 'MAINNET'}
-            </span>
+      {/* ============================================================
+          SECTION 1: HERO
+          ============================================================ */}
+      <section
+        style={{
+          minHeight: '100vh',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(180deg, #070C1F 0%, #07080F 60%, #050608 100%)',
+          overflow: 'hidden',
+          padding: '0 24px',
+        }}
+      >
+        {/* Depth lines background */}
+        <DepthLines />
+
+        {/* Bubbles */}
+        <BubbleField count={25} />
+
+        {/* Whale silhouette — barely visible, far right */}
+        <div
+          className="whale-drift"
+          style={{
+            position: 'absolute',
+            bottom: '15%',
+            right: '-40px',
+            opacity: 0.12,
+            pointerEvents: 'none',
+          }}
+        >
+          <WhaleAsset />
+        </div>
+
+        {/* Hero content */}
+        <div style={{ position: 'relative', zIndex: 10, textAlign: 'center', maxWidth: '820px' }}>
+          {/* Bitcoin icon */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '32px' }}>
+            <BitcoinGlow size={72} />
           </div>
 
-          {wallet.connected ? (
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
-                <p className="text-xs text-slate-400">{formatAddress(wallet.address!)}</p>
-                <p className="text-xs text-orange-400 font-mono">{formatBTC(wallet.wbtcBalance)} wBTC</p>
-              </div>
-              <button
-                onClick={() => { disconnectCartridge(); setController(null); disconnectWallet(); }}
-                className="text-xs text-slate-400 hover:text-slate-200 border border-white/10 rounded px-3 py-1.5"
+          {/* Title */}
+          <h1
+            className="glow-title"
+            style={{
+              fontSize: 'clamp(48px, 10vw, 96px)',
+              fontWeight: '900',
+              letterSpacing: '-0.02em',
+              color: '#F7931A',
+              lineHeight: 1,
+              marginBottom: '24px',
+            }}
+          >
+            INFINIYIELD
+          </h1>
+
+          {/* Subtitle */}
+          <p
+            style={{
+              fontSize: 'clamp(16px, 2.5vw, 22px)',
+              color: '#94A3B8',
+              lineHeight: 1.6,
+              maxWidth: '600px',
+              margin: '0 auto 16px',
+            }}
+          >
+            The vault that never closes.
+            <br />
+            <span style={{ color: '#F8FAFC', fontWeight: 500 }}>
+              wBTC locked forever, yield flowing forever.
+            </span>
+          </p>
+
+          <p
+            style={{
+              fontSize: '15px',
+              color: '#6C5CE7',
+              marginBottom: '48px',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              fontWeight: 600,
+            }}
+          >
+            Commit capital · Earn yield · Every season, the deepest whales win
+          </p>
+
+          {/* CTA */}
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              className="btn-vault"
+              onClick={() => depositSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
+              style={{ fontSize: '17px', padding: '16px 40px' }}
+            >
+              Enter the Vault ↓
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={() => document.getElementById('leaderboard')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              View the Depths
+            </button>
+          </div>
+
+          {/* Scroll hint */}
+          <p style={{ marginTop: '64px', color: '#1E2035', fontSize: '13px', letterSpacing: '0.1em' }}>
+            ▼ ▼ ▼
+          </p>
+        </div>
+      </section>
+
+      {/* ============================================================
+          SECTION 2: WHAT IS TRAP THE WHALE
+          ============================================================ */}
+      <section
+        style={{
+          padding: '100px 24px',
+          maxWidth: '1100px',
+          margin: '0 auto',
+        }}
+      >
+        {/* Section header */}
+        <div style={{ textAlign: 'center', marginBottom: '60px' }}>
+          <p style={{ color: '#6C5CE7', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
+            Protocol
+          </p>
+          <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '16px' }}>
+            Trap the Whale
+          </h2>
+          <p style={{ color: '#64748B', fontSize: '18px', maxWidth: '500px', margin: '0 auto' }}>
+            A yield competition built on permanent commitment.
+          </p>
+        </div>
+
+        {/* 3 cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '48px' }}>
+          {/* Lock Forever */}
+          <div className="ocean-card" style={{ padding: '32px' }}>
+            <div style={{ fontSize: '36px', marginBottom: '20px' }}>🔒</div>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
+              Lock Forever
+            </h3>
+            <p style={{ color: '#64748B', lineHeight: 1.7 }}>
+              Deposit wBTC. It never comes back.
+              <span style={{ color: '#F7931A', fontWeight: 600 }}> The game is commitment.</span>
+              <br /><br />
+              No rug. No exit. No second thoughts.
+            </p>
+            <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #F7931A44, transparent)' }} />
+          </div>
+
+          {/* Earn Forever */}
+          <div className="ocean-card" style={{ padding: '32px' }}>
+            <div style={{ fontSize: '36px', marginBottom: '20px' }}>∞</div>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
+              Earn Forever
+            </h3>
+            <p style={{ color: '#64748B', lineHeight: 1.7 }}>
+              Your BTC generates yield through Vesu DeFi
+              <span style={{ color: '#00D8A4', fontWeight: 600 }}> every block</span>.
+              <br /><br />
+              Each season the pool resets, yield flows again.
+            </p>
+            <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #00D8A444, transparent)' }} />
+          </div>
+
+          {/* Win by Weight */}
+          <div className="ocean-card" style={{ padding: '32px' }}>
+            <div style={{ fontSize: '36px', marginBottom: '20px' }}>🏆</div>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
+              Win by Weight
+            </h3>
+            <p style={{ color: '#64748B', lineHeight: 1.7 }}>
+              Top 10 depositors share
+              <span style={{ color: '#6C5CE7', fontWeight: 600 }}> 70% of yield</span>.
+              Quadratic weighting — the more you commit, the more you earn.
+            </p>
+            <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #6C5CE744, transparent)' }} />
+          </div>
+        </div>
+
+        {/* Live stats bar */}
+        <div className="stats-bar">
+          <div className="stats-item">
+            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>TVL</div>
+            <div style={{ color: '#F7931A', fontWeight: '700', fontSize: '18px' }}>
+              {season.totalDeposited > 0n ? formatBTC(season.totalDeposited) : '—'}
+            </div>
+          </div>
+          <div className="stats-item">
+            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>Yield Pool</div>
+            <div style={{ color: '#00D8A4', fontWeight: '700', fontSize: '18px' }}>
+              {season.yieldPool > 0n ? formatSats(season.yieldPool) : '—'}
+            </div>
+          </div>
+          <div className="stats-item">
+            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>Season</div>
+            <div style={{ color: '#6C5CE7', fontWeight: '700', fontSize: '18px' }}>
+              #{season.seasonNumber > 0n ? season.seasonNumber.toString() : '—'}
+            </div>
+          </div>
+          <div className="stats-item">
+            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>Whales</div>
+            <div style={{ color: '#F8FAFC', fontWeight: '700', fontSize: '18px' }}>
+              {totalDepositors > 0 ? totalDepositors : '—'}
+            </div>
+          </div>
+          <div className="stats-item">
+            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>Block</div>
+            <div style={{ color: '#F8FAFC', fontWeight: '700', fontSize: '18px' }}>
+              {season.currentBlock > 0n ? `#${season.currentBlock.toString()}` : '—'}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================================
+          SECTION 3: LEADERBOARD — THE DEPTHS
+          ============================================================ */}
+      <section
+        id="leaderboard"
+        style={{
+          padding: '100px 24px',
+          background: 'linear-gradient(180deg, #07080F 0%, #0A0C18 50%, #07080F 100%)',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        <DepthLines />
+
+        {/* Whale in background */}
+        <div
+          className="whale-drift"
+          style={{
+            position: 'absolute',
+            bottom: '10%',
+            left: '-60px',
+            opacity: 0.06,
+            pointerEvents: 'none',
+            transform: 'scaleX(-1)',
+          }}
+        >
+          <WhaleAsset />
+        </div>
+
+        <div style={{ maxWidth: '900px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+          {/* Section header */}
+          <div style={{ textAlign: 'center', marginBottom: '60px' }}>
+            <p style={{ color: '#6C5CE7', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
+              Leaderboard
+            </p>
+            <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '12px' }}>
+              The Depths
+            </h2>
+            <p style={{ color: '#64748B', fontSize: '17px' }}>
+              Who&apos;s committed the most
+            </p>
+          </div>
+
+          {/* Leaderboard */}
+          {leaderboardLoading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="shimmer" style={{ height: '72px', borderRadius: '10px' }} />
+              ))}
+            </div>
+          ) : leaderboard.length === 0 ? (
+            <div
+              style={{
+                textAlign: 'center',
+                padding: '80px 24px',
+                border: '1px dashed #1E2035',
+                borderRadius: '16px',
+              }}
+            >
+              <div style={{ fontSize: '48px', marginBottom: '20px' }}>🐋</div>
+              <h3 style={{ fontSize: '24px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
+                Be the first whale
+              </h3>
+              <p style={{ color: '#64748B' }}>
+                No one has committed yet. The ocean floor awaits.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Header */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '48px 1fr 140px 120px 90px',
+                  gap: '16px',
+                  padding: '8px 20px',
+                  color: '#64748B',
+                  fontSize: '11px',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                }}
               >
-                Disconnect
+                <span>#</span>
+                <span>Address</span>
+                <span style={{ textAlign: 'right' }}>wBTC Locked</span>
+                <span style={{ textAlign: 'right' }}>Score</span>
+                <span style={{ textAlign: 'right' }}>Yield Share</span>
+              </div>
+
+              {leaderboard.map((entry, idx) => {
+                const share = yieldShares[idx];
+                const barWidth = maxScore > 0n
+                  ? Math.round(Number((entry.score * 100n) / maxScore))
+                  : 0;
+                const isWinner = entry.rank === 1;
+
+                return (
+                  <div
+                    key={entry.addr}
+                    style={{
+                      background: isWinner
+                        ? 'linear-gradient(90deg, #1a0e0022, #F7931A08)'
+                        : '#0E1020',
+                      border: `1px solid ${isWinner ? '#7A4A0D' : '#1E2035'}`,
+                      borderRadius: '10px',
+                      padding: '16px 20px',
+                      display: 'grid',
+                      gridTemplateColumns: '48px 1fr 140px 120px 90px',
+                      gap: '16px',
+                      alignItems: 'center',
+                      position: 'relative',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* Depth bar background */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        bottom: 0,
+                        height: '2px',
+                        width: `${barWidth}%`,
+                        background: isWinner
+                          ? 'linear-gradient(90deg, #F7931A, transparent)'
+                          : 'linear-gradient(90deg, #6C5CE7, transparent)',
+                        opacity: 0.5,
+                      }}
+                    />
+
+                    {/* Rank */}
+                    <div>
+                      {entry.rank === 1 ? (
+                        <span style={{ fontSize: '22px' }}>🐋</span>
+                      ) : (
+                        <span className="rank-number">{entry.rank}</span>
+                      )}
+                    </div>
+
+                    {/* Address */}
+                    <div>
+                      <span style={{ fontFamily: 'monospace', fontSize: '14px', color: '#94A3B8' }}>
+                        {truncate(entry.addr)}
+                      </span>
+                      {wallet.address && entry.addr.toLowerCase() === wallet.address.toLowerCase() && (
+                        <span style={{
+                          marginLeft: '8px',
+                          background: '#6C5CE722',
+                          color: '#6C5CE7',
+                          fontSize: '10px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 600,
+                        }}>
+                          YOU
+                        </span>
+                      )}
+                    </div>
+
+                    {/* wBTC */}
+                    <div style={{ textAlign: 'right', fontWeight: '600', color: '#F7931A', fontSize: '14px' }}>
+                      {entry.principal != null
+                        ? `${satsToBTCDisplay(entry.principal)} BTC`
+                        : '—'}
+                    </div>
+
+                    {/* Score */}
+                    <div style={{ textAlign: 'right', color: '#94A3B8', fontSize: '14px' }}>
+                      {formatScore(entry.score)}
+                    </div>
+
+                    {/* Yield share */}
+                    <div style={{ textAlign: 'right', color: isWinner ? '#F7931A' : '#6C5CE7', fontWeight: '700', fontSize: '14px' }}>
+                      {share ? share.pctLabel : '—'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Yield split explanation */}
+          <div
+            style={{
+              marginTop: '40px',
+              padding: '20px 24px',
+              background: '#0D0F1A',
+              border: '1px solid #1E2035',
+              borderRadius: '10px',
+              display: 'flex',
+              gap: '32px',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+            }}
+          >
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#F7931A', fontWeight: '700', fontSize: '20px' }}>70%</div>
+              <div style={{ color: '#64748B', fontSize: '12px' }}>Top 10 (Quadratic)</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#00D8A4', fontWeight: '700', fontSize: '20px' }}>20%</div>
+              <div style={{ color: '#64748B', fontSize: '12px' }}>All Depositors (Pro-rata)</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: '#64748B', fontWeight: '700', fontSize: '20px' }}>10%</div>
+              <div style={{ color: '#64748B', fontSize: '12px' }}>Treasury</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================================
+          SECTION 4: VAULT ENTRY
+          ============================================================ */}
+      <section
+        ref={depositSectionRef}
+        id="deposit"
+        style={{
+          padding: '100px 24px',
+          maxWidth: '600px',
+          margin: '0 auto',
+        }}
+      >
+        {/* Section header */}
+        <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+          <p style={{ color: '#F7931A', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
+            Vault
+          </p>
+          <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '12px' }}>
+            Go Deeper
+          </h2>
+          <p style={{ color: '#64748B', fontSize: '17px' }}>
+            Commit your capital. Join the whales.
+          </p>
+        </div>
+
+        {/* Permanent warning */}
+        <div className="warning-banner" style={{ marginBottom: '32px' }}>
+          <span>⚠</span>
+          <span>No withdraw function. This is permanent. The vault never gives back.</span>
+        </div>
+
+        {/* Not deployed notice */}
+        {!CONTRACTS_DEPLOYED && (
+          <div
+            style={{
+              background: '#2D260022',
+              border: '1px solid #2D2660',
+              borderRadius: '10px',
+              padding: '20px',
+              marginBottom: '24px',
+              color: '#6C5CE7',
+              fontSize: '14px',
+              textAlign: 'center',
+            }}
+          >
+            Contracts not yet deployed. Set env vars to enable live interaction.
+          </div>
+        )}
+
+        {/* Wallet connect / info */}
+        <div className="btc-card" style={{ padding: '28px', marginBottom: '24px' }}>
+          {!wallet.connected ? (
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ color: '#64748B', marginBottom: '24px', fontSize: '15px' }}>
+                Connect your Cartridge wallet to interact with the vault.
+              </p>
+              <button
+                className="btn-vault"
+                onClick={handleConnect}
+                disabled={wallet.loading}
+                style={{ width: '100%' }}
+              >
+                {wallet.loading ? 'Connecting…' : 'Connect Cartridge Wallet'}
               </button>
             </div>
           ) : (
-            <button
-              onClick={handleConnect}
-              disabled={wallet.loading}
-              className="rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold transition-colors"
-            >
-              {wallet.loading ? 'Connecting…' : 'Connect Wallet'}
-            </button>
+            <div>
+              {/* Connected state */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div>
+                  <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    Connected
+                  </div>
+                  <div style={{ fontFamily: 'monospace', color: '#F8FAFC', fontSize: '14px' }}>
+                    {truncate(wallet.address ?? '')}
+                  </div>
+                </div>
+                <button
+                  onClick={handleDisconnect}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid #1E2035',
+                    color: '#64748B',
+                    borderRadius: '6px',
+                    padding: '8px 14px',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Disconnect
+                </button>
+              </div>
+
+              {/* Balances */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                <div style={{ background: '#07080F', borderRadius: '8px', padding: '14px', border: '1px solid #1E2035' }}>
+                  <div style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>wBTC Balance</div>
+                  <div style={{ color: '#F7931A', fontWeight: '700' }}>
+                    {satsToBTCDisplay(wallet.wbtcBalance)} BTC
+                  </div>
+                </div>
+                <div style={{ background: '#07080F', borderRadius: '8px', padding: '14px', border: '1px solid #1E2035' }}>
+                  <div style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>IY Tokens</div>
+                  <div style={{ color: '#6C5CE7', fontWeight: '700' }}>
+                    {wallet.iyBalance > 0n ? (wallet.iyBalance / BigInt(1e18)).toString() : '0'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Faucet */}
+              <button
+                onClick={handleMint}
+                disabled={tx.pending}
+                className="btn-ghost"
+                style={{ width: '100%' }}
+              >
+                {tx.pending ? 'Minting…' : '🚰 Mint Test wBTC (Sepolia faucet)'}
+              </button>
+            </div>
           )}
         </div>
-      </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-10 flex flex-col gap-10">
+        {/* Deposit form */}
+        {wallet.connected && (
+          <div className="ocean-card" style={{ padding: '28px', marginBottom: '24px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '20px', color: '#F8FAFC' }}>
+              Lock wBTC Forever
+            </h3>
 
-        {/* ── Hero ── */}
-        <section className="text-center flex flex-col gap-4">
-          <h1 className="text-4xl sm:text-5xl font-black tracking-tight">
-            Trap the Whale
-          </h1>
-          <p className="text-slate-400 max-w-xl mx-auto text-base leading-relaxed">
-            Deposit wBTC permanently. Earn yield from DeFi.
-            The top 10 depositors share <span className="text-orange-400 font-semibold">70%</span> of all yield each season.
-            There is no withdraw. This is the game.
-          </p>
-          {!CONTRACTS_DEPLOYED && (
-            <div className="inline-flex items-center gap-2 mx-auto border border-yellow-500/30 bg-yellow-500/10 rounded-lg px-4 py-2 text-sm text-yellow-300">
-              ⚠ Contracts not yet deployed — connect to interact once live
+            {/* Amount input */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ color: '#64748B', fontSize: '13px', display: 'block', marginBottom: '8px' }}>
+                Amount (BTC)
+              </label>
+              <input
+                type="number"
+                className="vault-input"
+                placeholder="0.001"
+                value={depositAmountStr}
+                onChange={(e) => setDepositAmountStr(e.target.value)}
+                min="0"
+                step="0.0001"
+              />
             </div>
-          )}
-        </section>
 
-        {/* ── Season Stats ── */}
-        <section className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard
-              label="Total Locked"
-              value={formatBTC(season.totalDeposited)}
-              sub={formatUSD(season.totalDeposited, BTC_PRICE_USD)}
-              accent="orange"
-            />
-            <StatCard
-              label="Yield Pool"
-              value={formatBTC(season.yieldPool)}
-              sub={`Season #${season.seasonNumber}`}
-              accent="green"
-            />
-            <StatCard
-              label="Season"
-              value={`#${season.seasonNumber}`}
-              sub={`Block ${season.currentBlock}`}
-              accent="purple"
-            />
-            <StatCard
-              label="Block"
-              value={season.currentBlock > 0n ? season.currentBlock.toString() : '—'}
-              sub="current"
-            />
-          </div>
-          <SeasonBar pct={seasonProgress.percentComplete} isOver={seasonProgress.isOver} />
-        </section>
-
-        {/* ── Tabs ── */}
-        <section>
-          <div className="flex border-b border-white/10 mb-6">
-            {(['deposit', 'leaderboard', 'yield'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-5 py-3 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${
-                  activeTab === tab
-                    ? 'border-violet-500 text-violet-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
+            {/* Preview */}
+            {depositSats > 0n && (
+              <div
+                style={{
+                  background: '#07080F',
+                  border: '1px solid #1E2035',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  marginBottom: '20px',
+                  fontSize: '13px',
+                }}
               >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          {/* ─ Deposit Tab ─ */}
-          {activeTab === 'deposit' && (
-            <div className="grid sm:grid-cols-2 gap-6">
-
-              {/* Deposit form */}
-              <div className="rounded-xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4">
-                <div>
-                  <h2 className="text-lg font-bold">Lock wBTC</h2>
-                  <p className="text-sm text-slate-400 mt-1">
-                    Permanent. No withdraw. Your principal stays forever and earns yield every season.
-                  </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ color: '#64748B' }}>Satoshis</span>
+                  <span style={{ color: '#F8FAFC', fontWeight: 600 }}>{formatSats(depositSats)}</span>
                 </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs text-slate-400 uppercase tracking-wider">Amount (BTC)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.0001"
-                    placeholder="0.001"
-                    value={depositInput}
-                    onChange={(e) => setDepositInput(e.target.value)}
-                    className="rounded-lg bg-white/10 border border-white/10 px-4 py-3 font-mono text-sm focus:outline-none focus:border-violet-500 transition-colors"
-                  />
-                  {wallet.connected && (
-                    <button
-                      onClick={() => setDepositInput(
-                        (Number(wallet.wbtcBalance) / 1e8).toFixed(8)
-                      )}
-                      className="text-xs text-violet-400 hover:text-violet-300 self-start"
-                    >
-                      Max: {formatBTC(wallet.wbtcBalance)}
-                    </button>
-                  )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ color: '#64748B' }}>IY Tokens to mint</span>
+                  <span style={{ color: '#6C5CE7', fontWeight: 600 }}>
+                    {iyToMint > 0n ? (iyToMint / BigInt(1e15)).toString() : '0'} mIY
+                  </span>
                 </div>
-
-                {depositSats > 0n && (
-                  <div className="rounded-lg bg-white/5 border border-white/10 px-4 py-3 text-sm flex flex-col gap-1">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Deposit</span>
-                      <span className="font-mono">{formatSats(depositSats)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">IY tokens minted</span>
-                      <span className="font-mono text-violet-400">
-                        {iyPreview ? (Number(iyPreview) / 1e18).toFixed(2) : '0'} IY
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Withdraw</span>
-                      <span className="text-red-400 font-semibold">Never</span>
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleDeposit}
-                  disabled={!wallet.connected || depositSats <= 0n || tx.pending}
-                  className="rounded-lg bg-orange-500 hover:bg-orange-400 disabled:opacity-40 disabled:cursor-not-allowed py-3 font-bold text-sm transition-colors"
+                <div
+                  style={{
+                    marginTop: '12px',
+                    padding: '8px',
+                    background: '#F7931A11',
+                    borderRadius: '6px',
+                    color: '#F7931A',
+                    fontSize: '12px',
+                    textAlign: 'center',
+                    fontWeight: 600,
+                  }}
                 >
-                  {!wallet.connected ? 'Connect wallet first' : 'Lock wBTC Forever'}
-                </button>
-
-                {IS_TESTNET && wallet.connected && (
-                  <button
-                    onClick={handleMintWBTC}
-                    disabled={tx.pending}
-                    className="rounded-lg border border-white/10 hover:bg-white/10 py-2 text-xs text-slate-400 transition-colors"
-                    title="Mint 0.01 mock wBTC for testing"
-                  >
-                    🚰 Get 0.01 test wBTC (faucet)
-                  </button>
-                )}
-              </div>
-
-              {/* My position */}
-              <div className="rounded-xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4">
-                <h2 className="text-lg font-bold">My Position</h2>
-
-                {!wallet.connected ? (
-                  <p className="text-sm text-slate-400">Connect wallet to see your position.</p>
-                ) : !depositorInfo || depositorInfo.principal === 0n ? (
-                  <p className="text-sm text-slate-400">No deposits yet. Lock wBTC to start earning.</p>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Principal locked</span>
-                        <span className="font-mono text-orange-400">{formatBTC(depositorInfo.principal)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Score</span>
-                        <span className="font-mono text-violet-400">{formatScore(depositorInfo.score)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Claimable yield</span>
-                        <span className="font-mono text-emerald-400">{formatBTC(depositorInfo.claimable_yield)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Pro-rata this season</span>
-                        <span className="font-mono text-slate-300">{formatBTC(proRataShare)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">IY balance</span>
-                        <span className="font-mono text-violet-400">{(Number(wallet.iyBalance) / 1e18).toFixed(2)} IY</span>
-                      </div>
-                    </div>
-
-                    {claimBreakdown && (
-                      <div className="rounded-lg bg-white/5 border border-white/10 px-4 py-3 text-sm flex flex-col gap-1">
-                        {claimBreakdown.canClaim ? (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Gross</span>
-                              <span className="font-mono">{formatSats(claimBreakdown.gross)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Fee (1%)</span>
-                              <span className="font-mono text-red-400">−{formatSats(claimBreakdown.fee)}</span>
-                            </div>
-                            <div className="flex justify-between font-semibold">
-                              <span>Net</span>
-                              <span className="font-mono text-emerald-400">{formatSats(claimBreakdown.net)}</span>
-                            </div>
-                          </>
-                        ) : (
-                          <p className="text-yellow-400 text-xs">{claimBreakdown.reason}</p>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleClaim}
-                        disabled={!claimBreakdown?.canClaim || tx.pending}
-                        className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed py-2.5 font-semibold text-sm transition-colors"
-                      >
-                        Claim Yield
-                      </button>
-                      <button
-                        onClick={handleHarvest}
-                        disabled={tx.pending}
-                        className="rounded-lg border border-white/10 hover:bg-white/10 px-4 py-2.5 text-sm transition-colors"
-                        title="Pull latest yield from DeFi source into the season pool"
-                      >
-                        Harvest
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ─ Leaderboard Tab ─ */}
-          {activeTab === 'leaderboard' && (
-            <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-              <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-                <h2 className="font-bold">Top 10 Depositors</h2>
-                <span className="text-xs text-slate-400">
-                  Share 70% of season yield — quadratic distribution
-                </span>
-              </div>
-
-              {leaderboardLoading || leaderboard.length === 0 ? (
-                <div className="px-6 py-12 text-center text-slate-400 text-sm">
-                  {leaderboardLoading ? 'Loading…' : 'No depositors yet. Be first.'}
+                  ⚠ This action cannot be undone. Ever.
                 </div>
-              ) : (
-                <div className="divide-y divide-white/5">
-                  {leaderboard.map((entry) => {
-                    const share = yieldShares.find((s) => s.rank === entry.rank);
-                    const isMe = wallet.address?.toLowerCase() === entry.addr.toLowerCase();
-                    return (
-                      <div
-                        key={entry.addr}
-                        className={`px-6 py-4 flex items-center gap-4 ${isMe ? 'bg-violet-500/10' : ''}`}
-                      >
-                        <div className="w-10 text-center">
-                          <RankBadge rank={entry.rank} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-mono text-sm truncate">
-                            {formatAddress(entry.addr)}
-                            {isMe && <span className="ml-2 text-xs text-violet-400">you</span>}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            Score: {formatScore(entry.score)}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          {share && (
-                            <>
-                              <p className="text-sm font-semibold text-emerald-400">{share.pctLabel}</p>
-                              <p className="text-xs text-slate-400">of total yield</p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+              </div>
+            )}
+
+            {/* Deposit button */}
+            <button
+              className="btn-vault"
+              onClick={handleDeposit}
+              disabled={tx.pending || depositSats === 0n || !CONTRACTS_DEPLOYED}
+              style={{ width: '100%', fontSize: '16px' }}
+            >
+              {tx.pending ? 'Locking…' : '🔒 Lock wBTC Forever'}
+            </button>
+
+            {/* TX status */}
+            {tx.hash && (
+              <div style={{ marginTop: '16px', padding: '12px', background: '#004D3A22', border: '1px solid #00D8A433', borderRadius: '8px', fontSize: '13px' }}>
+                <div style={{ color: '#00D8A4', fontWeight: 600, marginBottom: '4px' }}>✓ Transaction submitted</div>
+                <div style={{ fontFamily: 'monospace', color: '#64748B', fontSize: '11px', wordBreak: 'break-all' }}>
+                  {tx.hash}
+                </div>
+                <button
+                  onClick={() => clearTx()}
+                  style={{ marginTop: '8px', background: 'none', border: 'none', color: '#64748B', fontSize: '11px', cursor: 'pointer' }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+            {tx.error && (
+              <div style={{ marginTop: '16px', padding: '12px', background: '#3d000022', border: '1px solid #ff444433', borderRadius: '8px', fontSize: '13px', color: '#ff6666' }}>
+                {tx.error}
+                <button
+                  onClick={() => clearTx()}
+                  style={{ display: 'block', marginTop: '8px', background: 'none', border: 'none', color: '#64748B', fontSize: '11px', cursor: 'pointer' }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* My Position */}
+        {wallet.connected && depositorInfo && depositorInfo.principal > 0n && (
+          <div className="btc-card" style={{ padding: '28px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '20px', color: '#F8FAFC', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              🐋 My Position
+            </h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ background: '#07080F', borderRadius: '8px', padding: '14px', border: '1px solid #1E2035' }}>
+                <div style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>wBTC Locked</div>
+                <div style={{ color: '#F7931A', fontWeight: '700' }}>{satsToBTCDisplay(depositorInfo.principal)} BTC</div>
+              </div>
+              <div style={{ background: '#07080F', borderRadius: '8px', padding: '14px', border: '1px solid #1E2035' }}>
+                <div style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Score</div>
+                <div style={{ color: '#6C5CE7', fontWeight: '700' }}>{formatScore(depositorInfo.score)}</div>
+              </div>
+              <div style={{ background: '#07080F', borderRadius: '8px', padding: '14px', border: '1px solid #1E2035' }}>
+                <div style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>Claimable Yield</div>
+                <div style={{ color: '#00D8A4', fontWeight: '700' }}>{formatSats(depositorInfo.claimable_yield)}</div>
+              </div>
+              {claimBreakdown && claimBreakdown.canClaim && (
+                <div style={{ background: '#07080F', borderRadius: '8px', padding: '14px', border: '1px solid #1E2035' }}>
+                  <div style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>After 1% Fee</div>
+                  <div style={{ color: '#00D8A4', fontWeight: '700' }}>{formatSats(claimBreakdown.net)}</div>
                 </div>
               )}
             </div>
-          )}
 
-          {/* ─ Yield Tab ─ */}
-          {activeTab === 'yield' && (
-            <div className="flex flex-col gap-6">
-
-              {/* Distribution breakdown */}
-              <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-                <div className="px-6 py-4 border-b border-white/10">
-                  <h2 className="font-bold">Season Yield Distribution</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">
-                    Pool: <span className="text-emerald-400 font-mono">{formatBTC(season.yieldPool)}</span>
-                    {' '}(from Vesu DeFi yield on locked wBTC)
-                  </p>
-                </div>
-                <div className="divide-y divide-white/5">
-                  {/* Top 10 rows */}
-                  {yieldShares.map((s) => (
-                    <div key={s.rank} className="px-6 py-3 flex items-center gap-4 text-sm">
-                      <div className="w-10 text-center">
-                        <RankBadge rank={s.rank} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className="h-full bg-emerald-500 rounded-full"
-                            style={{ width: `${s.fractionOfTotal * 100 * 3}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="text-right w-28">
-                        <span className="font-mono text-emerald-400">{s.pctLabel}</span>
-                        <span className="text-slate-500 text-xs ml-1">of pool</span>
-                      </div>
-                      <div className="text-right w-36 font-mono text-xs text-slate-300">
-                        {formatBTC(s.amountSatoshis)}
-                      </div>
-                    </div>
-                  ))}
-                  {/* Pro-rata row */}
-                  <div className="px-6 py-3 flex items-center gap-4 text-sm bg-white/[0.02]">
-                    <div className="w-10 text-center text-slate-400 text-xs">All</div>
-                    <div className="flex-1 text-slate-400">All depositors — pro-rata by principal</div>
-                    <div className="text-right w-28 font-mono text-violet-400">20.00%</div>
-                    <div className="text-right w-36 font-mono text-xs text-slate-300">
-                      {formatBTC((season.yieldPool * CONTRACT.YIELD_DEPOSITORS_PCT) / CONTRACT.PCT_DENOM)}
-                    </div>
-                  </div>
-                  {/* Treasury row */}
-                  <div className="px-6 py-3 flex items-center gap-4 text-sm bg-white/[0.02]">
-                    <div className="w-10 text-center text-slate-400 text-xs">⚙</div>
-                    <div className="flex-1 text-slate-400">Treasury</div>
-                    <div className="text-right w-28 font-mono text-slate-400">10.00%</div>
-                    <div className="text-right w-36 font-mono text-xs text-slate-300">
-                      {formatBTC((season.yieldPool * CONTRACT.YIELD_TREASURY_PCT) / CONTRACT.PCT_DENOM)}
-                    </div>
-                  </div>
-                </div>
+            {/* Cooldown message */}
+            {claimBreakdown && !claimBreakdown.canClaim && claimBreakdown.reason && (
+              <div style={{ marginBottom: '16px', padding: '10px 14px', background: '#2D260022', border: '1px solid #2D2660', borderRadius: '8px', color: '#6C5CE7', fontSize: '13px' }}>
+                ⏳ {claimBreakdown.reason}
               </div>
+            )}
 
-              {/* Scoring explainer */}
-              <div className="rounded-xl border border-white/10 bg-white/5 p-6">
-                <h3 className="font-bold mb-3">How scoring works</h3>
-                <div className="text-sm text-slate-300 space-y-2 font-mono">
-                  <p>score = principal_sats × t_effective / 100</p>
-                  <p className="text-slate-400 font-sans text-xs mt-2">
-                    t_effective accumulates per block — tiered to reward long-term holders:
-                  </p>
-                  <div className="grid grid-cols-3 gap-2 text-xs mt-2">
-                    <div className="rounded bg-white/5 px-3 py-2">
-                      <p className="text-slate-400">Days 1–45</p>
-                      <p className="text-violet-400 font-bold">+100 / day</p>
-                    </div>
-                    <div className="rounded bg-white/5 px-3 py-2">
-                      <p className="text-slate-400">Days 46–90</p>
-                      <p className="text-violet-400 font-bold">+70 / day</p>
-                    </div>
-                    <div className="rounded bg-white/5 px-3 py-2">
-                      <p className="text-slate-400">Days 91+</p>
-                      <p className="text-violet-400 font-bold">+40 / day</p>
-                    </div>
-                  </div>
-                  <p className="text-slate-400 font-sans text-xs mt-2">
-                    Anti-sybil: splitting 1 BTC across 2 wallets gives identical total score. Zero advantage.
-                  </p>
-                </div>
-              </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                className="btn-vault"
+                onClick={handleClaim}
+                disabled={
+                  tx.pending ||
+                  !claimBreakdown?.canClaim ||
+                  !CONTRACTS_DEPLOYED
+                }
+                style={{ flex: 1 }}
+              >
+                {tx.pending ? 'Claiming…' : '💰 Claim Yield'}
+              </button>
+              <button
+                className="btn-ghost"
+                onClick={handleHarvest}
+                disabled={tx.pending || !CONTRACTS_DEPLOYED}
+                style={{ flex: 1 }}
+              >
+                🌾 Harvest
+              </button>
             </div>
-          )}
-        </section>
+          </div>
+        )}
+      </section>
 
-      </main>
+      {/* ============================================================
+          SECTION 5: FOOTER
+          ============================================================ */}
+      <footer
+        style={{
+          borderTop: '1px solid #1E2035',
+          padding: '40px 24px',
+          background: '#0D0F1A',
+        }}
+      >
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ color: '#F7931A', fontWeight: '900', fontSize: '18px', letterSpacing: '-0.02em' }}>INFINIYIELD</span>
+              <span style={{ color: '#1E2035' }}>|</span>
+              <span style={{ color: '#6C5CE7', fontSize: '13px', fontWeight: 600 }}>Starknet Sepolia</span>
+            </div>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#64748B', fontSize: '14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.341-3.369-1.341-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.744 0 .267.18.579.688.481C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+              </svg>
+              GitHub
+            </a>
+          </div>
 
-      <footer className="border-t border-white/10 mt-20 py-8 text-center text-xs text-slate-500">
-        INFINIYIELD — Starknet · {IS_TESTNET ? 'Sepolia testnet' : 'Mainnet'} ·{' '}
-        <a
-          href="https://github.com/spiritclawd/infiniyield"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-slate-300"
-        >
-          GitHub
-        </a>
+          {/* Contract addresses */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+            {Object.entries(CONTRACT_ADDRESSES).map(([key, addr]) => (
+              <div key={key} style={{ fontSize: '12px' }}>
+                <span style={{ color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{key}:{' '}</span>
+                <span style={{ fontFamily: 'monospace', color: '#2D2660' }}>
+                  {addr === '0x0' ? 'not deployed' : truncate(addr)}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ color: '#1E2035', fontSize: '12px', textAlign: 'center' }}>
+            No withdraw function. No refunds. Pure commitment.
+          </div>
+        </div>
       </footer>
     </div>
   );

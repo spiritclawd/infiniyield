@@ -1,128 +1,316 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0f;
-  --foreground: #f8fafc;
+  --background: #07080F;
+  --foreground: #F8FAFC;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  overflow-x: hidden;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar — ocean theme */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(139, 92, 246, 0.1);
+  background: #0D0F1A;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(139, 92, 246, 0.3);
-  border-radius: 4px;
+  background: #2D2660;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 92, 246, 0.5);
+  background: #6C5CE7;
 }
 
-/* Gradient text utility */
-.gradient-text {
-  background: linear-gradient(135deg, #a855f7 0%, #3b82f6 50%, #22c55e 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+/* =====================================================================
+   ANIMATIONS
+   ===================================================================== */
+
+@keyframes bubble-rise {
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(-100vh) scale(0.5);
+    opacity: 0;
+  }
 }
 
-/* Glow effects */
-.glow-purple {
-  box-shadow: 0 0 40px rgba(139, 92, 246, 0.3);
-}
-
-.glow-green {
-  box-shadow: 0 0 40px rgba(34, 197, 94, 0.3);
-}
-
-/* Animations */
-@keyframes pulse-glow {
+@keyframes glow-pulse {
   0%, 100% {
-    box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+    text-shadow:
+      0 0 20px #F7931A44,
+      0 0 40px #F7931A22;
   }
   50% {
-    box-shadow: 0 0 40px rgba(139, 92, 246, 0.6);
+    text-shadow:
+      0 0 40px #F7931A88,
+      0 0 80px #F7931A44,
+      0 0 120px #F7931A22;
   }
 }
 
-@keyframes float {
+@keyframes btc-glow-pulse {
   0%, 100% {
-    transform: translateY(0px);
+    filter: drop-shadow(0 0 8px #F7931A44) drop-shadow(0 0 20px #F7931A22);
   }
   50% {
-    transform: translateY(-10px);
+    filter: drop-shadow(0 0 16px #F7931A88) drop-shadow(0 0 40px #F7931A44);
   }
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+@keyframes whale-drift {
+  0%, 100% {
+    transform: translateX(0) translateY(0);
+  }
+  33% {
+    transform: translateX(20px) translateY(-10px);
+  }
+  66% {
+    transform: translateX(-10px) translateY(5px);
+  }
 }
 
-.animate-float {
-  animation: float 3s ease-in-out infinite;
+@keyframes depth-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
 }
 
-/* Card hover effects */
-.card-hover {
-  transition: all 0.3s ease;
+@keyframes depth-bar-fill {
+  from {
+    width: 0;
+  }
+  to {
+    width: var(--target-width);
+  }
 }
 
-.card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 40px rgba(139, 92, 246, 0.2);
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* Button styles */
-.btn-primary {
-  background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* =====================================================================
+   UTILITY CLASSES
+   ===================================================================== */
+
+.glow-title {
+  animation: glow-pulse 4s ease-in-out infinite;
+}
+
+.btc-glow-pulse {
+  animation: btc-glow-pulse 3s ease-in-out infinite;
+}
+
+.whale-drift {
+  animation: whale-drift 12s ease-in-out infinite;
+}
+
+.fade-in-up {
+  animation: fade-in-up 0.6s ease-out both;
+}
+
+.depth-drift {
+  animation: depth-drift 30s linear infinite;
+}
+
+/* Card styles */
+.ocean-card {
+  background: #0E1020;
+  border: 1px solid #1E2035;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.ocean-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #6C5CE711 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.btc-card {
+  background: #0E1020;
+  border: 1px solid #7A4A0D44;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.btc-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #F7931A0A 0%, transparent 60%);
+  pointer-events: none;
+}
+
+/* Orange glow button */
+.btn-vault {
+  background: linear-gradient(135deg, #F7931A, #e07d10);
+  color: #07080F;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 14px 32px;
+  font-size: 16px;
+  border: none;
+  cursor: pointer;
   transition: all 0.2s ease;
+  box-shadow: 0 0 20px #F7931A33;
+  letter-spacing: 0.02em;
 }
 
-.btn-primary:hover {
-  background: linear-gradient(135deg, #9333ea 0%, #4f46e5 100%);
+.btn-vault:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 30px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 40px #F7931A55, 0 4px 20px #F7931A33;
 }
 
-/* Leaderboard row animation */
-.leaderboard-row {
+.btn-vault:active {
+  transform: translateY(0);
+}
+
+.btn-vault:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Purple outline button */
+.btn-ghost {
+  background: transparent;
+  color: #6C5CE7;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 12px 28px;
+  font-size: 15px;
+  border: 1px solid #6C5CE7;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.leaderboard-row:hover {
-  background: rgba(139, 92, 246, 0.1);
-  transform: scale(1.01);
+.btn-ghost:hover {
+  background: #6C5CE722;
+  box-shadow: 0 0 20px #6C5CE733;
 }
 
-/* Stat card gradient */
-.stat-card {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+/* Stats bar */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: #0D0F1A;
+  border: 1px solid #1E2035;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
-/* Tier badges */
-.tier-gold {
-  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-  color: #1a1a2e;
+.stats-item {
+  flex: 1;
+  padding: 16px 20px;
+  text-align: center;
+  border-right: 1px solid #1E2035;
 }
 
-.tier-silver {
-  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
-  color: #1a1a2e;
+.stats-item:last-child {
+  border-right: none;
 }
 
-.tier-bronze {
-  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
-  color: #1a1a2e;
+/* Input field */
+.vault-input {
+  background: #07080F;
+  border: 1px solid #1E2035;
+  border-radius: 8px;
+  color: #F8FAFC;
+  padding: 14px 16px;
+  font-size: 18px;
+  font-weight: 600;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.vault-input:focus {
+  border-color: #F7931A;
+  box-shadow: 0 0 0 3px #F7931A15;
+}
+
+.vault-input::placeholder {
+  color: #64748B;
+  font-weight: 400;
+}
+
+/* Depth bar animation */
+.depth-bar-animate {
+  animation: depth-bar-fill 1s ease-out both;
+}
+
+/* Warning banner */
+.warning-banner {
+  background: linear-gradient(90deg, #7A4A0D22, #F7931A11, #7A4A0D22);
+  border: 1px solid #7A4A0D;
+  border-radius: 8px;
+  padding: 12px 20px;
+  color: #F7931A;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Leaderboard rank styles */
+.rank-whale {
+  color: #F7931A;
+  font-size: 20px;
+}
+
+.rank-number {
+  color: #64748B;
+  font-weight: 700;
+  font-size: 14px;
+  min-width: 24px;
+  text-align: center;
+}
+
+/* Shimmer loading */
+.shimmer {
+  background: linear-gradient(90deg, #1E2035 25%, #2D2660 50%, #1E2035 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
 }
