@@ -1,250 +1,294 @@
 /**
- * INFINIYIELD - Money Flow Logic
+ * INFINIYIELD — Money Flow Logic
  *
- * This module handles the core financial operations:
- * - Fee splitting (90% vault / 10% platform)
- * - Yield distribution to top players
- * - Time-weighted claim calculations
+ * Matches VaultCore.cairo exactly. Single source of truth.
+ *
+ * === YIELD SPLIT (per season) ===
+ *   70% → top 10 depositors, quadratic: (11-rank)² / 385
+ *   20% → all depositors, pro-rata by wBTC principal
+ *   10% → treasury
+ *
+ * === SCORING ===
+ *   score = principal_sats × t_effective_scaled / 100
+ *   t_effective accumulates per block (tiered decay over 90 days)
+ *
+ * === CLAIM ===
+ *   1% fee, 24h cooldown (43200 blocks), min 1000 sats
  */
 
-// Basis points denominator (10000 = 100%)
-const BPS_DENOMINATOR = 10000n;
+// =====================================================================
+//  CONTRACT CONSTANTS (mirror of vault_core.cairo)
+// =====================================================================
 
-// Fee split percentages
-export const FEE_SPLIT = {
-  VAULT_BPS: 9000n,     // 90%
-  PLATFORM_BPS: 1000n,  // 10%
+export const CONTRACT = {
+  SEASON_BLOCKS: 100n,            // testing; production: 2_592_000n (~60 days)
+  BLOCKS_PER_DAY: 43200n,         // Sepolia: ~2s per block
+  CLAIM_COOLDOWN_BLOCKS: 43200n,  // 24h
+  MIN_CLAIM_SATS: 1000n,          // minimum claimable
+  CLAIM_FEE_BPS: 100n,            // 1%
+  BPS_DENOM: 10000n,
+  IY_PER_1000_SATS: 1_000_000_000_000_000_000n, // 1e18
+
+  // Yield split (integer percentages)
+  YIELD_TOP10_PCT: 70n,
+  YIELD_DEPOSITORS_PCT: 20n,
+  YIELD_TREASURY_PCT: 10n,
+  PCT_DENOM: 100n,
+
+  // Scoring t_effective tiers
+  DAY_45: 45n,
+  DAY_90: 90n,
+  RATE_TIER1: 100n,  // days 1-45: +100 per day
+  RATE_TIER2: 70n,   // days 46-90: +70 per day
+  RATE_TIER3: 40n,   // days 91+:   +40 per day
 } as const;
 
-// Yield distribution tiers
-export const YIELD_TIERS = [
-  { maxRank: 1, shareBps: 3000n, label: 'Top 1' },     // 30%
-  { maxRank: 5, shareBps: 2500n, label: 'Top 2-5' },    // 25%
-  { maxRank: 10, shareBps: 2000n, label: 'Top 6-10' },  // 20%
-  { maxRank: 25, shareBps: 1500n, label: 'Top 11-25' }, // 15%
-  { maxRank: 50, shareBps: 1000n, label: 'Top 26-50' }, // 10%
-] as const;
+// Leaderboard quadratic denominator: Σ (11-rank)² for rank 1..10 = 385
+export const RANK_SUM = 385n;
+export const MAX_RANK = 10;
 
-/**
- * Result of fee split calculation
- */
-export interface FeeSplitResult {
-  totalAmount: bigint;
-  vaultAmount: bigint;
-  platformAmount: bigint;
-  vaultPercentage: number;
-  platformPercentage: number;
-}
+// =====================================================================
+//  YIELD DISTRIBUTION
+// =====================================================================
 
-/**
- * Calculate the fee split for an entry fee
- * 
- * @param amountSatoshis - Entry fee in satoshis (1 BTC = 100,000,000 satoshis)
- * @returns FeeSplitResult with vault and platform amounts
- * 
- * @example
- * ```typescript
- * const split = calculateFeeSplit(100000n); // 0.001 BTC
- * console.log(split.vaultAmount);   // 90000n (90%)
- * console.log(split.platformAmount); // 10000n (10%)
- * ```
- */
-export function calculateFeeSplit(amountSatoshis: bigint): FeeSplitResult {
-  const vaultAmount = (amountSatoshis * FEE_SPLIT.VAULT_BPS) / BPS_DENOMINATOR;
-  const platformAmount = (amountSatoshis * FEE_SPLIT.PLATFORM_BPS) / BPS_DENOMINATOR;
-
-  return {
-    totalAmount: amountSatoshis,
-    vaultAmount,
-    platformAmount,
-    vaultPercentage: Number(FEE_SPLIT.VAULT_BPS) / 100,
-    platformPercentage: Number(FEE_SPLIT.PLATFORM_BPS) / 100,
-  };
-}
-
-/**
- * Calculate fee split from BTC decimal string
- */
-export function calculateFeeSplitFromBTC(btcAmount: string): FeeSplitResult {
-  const satoshis = btcToSatoshis(btcAmount);
-  return calculateFeeSplit(satoshis);
-}
-
-/**
- * Yield distribution for a player
- */
-export interface YieldShare {
+export interface RankYieldShare {
   rank: number;
-  shareBps: bigint;
-  percentage: number;
+  /** Quadratic numerator: (11-rank)² */
+  numerator: bigint;
+  /** Fraction of the 70% top-10 pool this rank earns */
+  fractionOfTop10: number;
+  /** Fraction of total yield pool */
+  fractionOfTotal: number;
+  /** Human-readable percentage of total yield */
+  pctLabel: string;
+  /** Amount in sats given a total yield pool */
   amountSatoshis: bigint;
 }
 
 /**
- * Calculate yield distribution for all tiers
- * 
- * @param totalYieldSatoshis - Total yield to distribute
- * @returns Array of yield shares by tier
+ * Returns yield share data for each rank 1..10 (or up to lb_size).
+ * Mirrors distribute_yield_pool() in vault_core.cairo.
+ *
+ * @param totalYieldPool  Total yield pool in sats (100% before split)
+ * @param lbSize          Number of active leaderboard entries (max 10)
  */
-export function calculateYieldDistribution(totalYieldSatoshis: bigint): YieldShare[] {
-  const distributions: YieldShare[] = [];
-  
-  for (const tier of YIELD_TIERS) {
-    const amount = (totalYieldSatoshis * tier.shareBps) / BPS_DENOMINATOR;
-    distributions.push({
-      rank: tier.maxRank,
-      shareBps: tier.shareBps,
-      percentage: Number(tier.shareBps) / 100,
-      amountSatoshis: amount,
+export function getTop10YieldShares(
+  totalYieldPool: bigint,
+  lbSize: number = MAX_RANK,
+): RankYieldShare[] {
+  const top10Pool = (totalYieldPool * CONTRACT.YIELD_TOP10_PCT) / CONTRACT.PCT_DENOM;
+  const effectiveSize = Math.min(lbSize, MAX_RANK);
+  const shares: RankYieldShare[] = [];
+
+  for (let rank = 1; rank <= effectiveSize; rank++) {
+    const numerator = BigInt((11 - rank) ** 2);
+    const amountSatoshis = (top10Pool * numerator) / RANK_SUM;
+    const fractionOfTop10 = Number(numerator) / Number(RANK_SUM);
+    const fractionOfTotal = fractionOfTop10 * 0.7; // top10 pool is 70% of total
+
+    shares.push({
+      rank,
+      numerator,
+      fractionOfTop10,
+      fractionOfTotal,
+      pctLabel: `${(fractionOfTotal * 100).toFixed(2)}%`,
+      amountSatoshis,
     });
   }
-  
-  return distributions;
+
+  return shares;
 }
 
 /**
- * Get yield share for a specific rank
+ * Yield share for a single rank (returns null if rank > 10).
  */
 export function getYieldShareForRank(
   rank: number,
-  totalYieldSatoshis: bigint,
-): YieldShare | null {
-  for (let i = 0; i < YIELD_TIERS.length; i++) {
-    const tier = YIELD_TIERS[i];
-    const prevMaxRank = i > 0 ? YIELD_TIERS[i - 1].maxRank : 0;
-    
-    if (rank <= tier.maxRank && rank > prevMaxRank) {
-      const amount = (totalYieldSatoshis * tier.shareBps) / BPS_DENOMINATOR;
-      
-      // Distribute evenly within tier
-      const playersInTier = BigInt(tier.maxRank - prevMaxRank);
-      const amountPerPlayer = amount / playersInTier;
-      
-      return {
-        rank,
-        shareBps: tier.shareBps / BigInt(tier.maxRank - prevMaxRank),
-        percentage: Number(tier.shareBps) / 100 / (tier.maxRank - prevMaxRank),
-        amountSatoshis: amountPerPlayer,
-      };
-    }
-  }
-  
-  return null; // Rank outside top 50%
+  totalYieldPool: bigint,
+  lbSize: number = MAX_RANK,
+): RankYieldShare | null {
+  if (rank < 1 || rank > Math.min(lbSize, MAX_RANK)) return null;
+  return getTop10YieldShares(totalYieldPool, lbSize)[rank - 1];
 }
 
 /**
- * Time-weighted claim multiplier
- * Players must maintain position to maximize claims
+ * Pro-rata yield share for a depositor from the 20% pool.
+ *
+ * @param principalSats      This depositor's locked principal
+ * @param totalDepositedSats Total wBTC locked in vault
+ * @param totalYieldPool     Total yield pool for the season
  */
-export function calculateTimeWeightedClaim(
-  baseAmount: bigint,
-  daysInPosition: number,
-  maxMultiplier: number = 2.0,
+export function getDepositorProRataShare(
+  principalSats: bigint,
+  totalDepositedSats: bigint,
+  totalYieldPool: bigint,
 ): bigint {
-  // Linear scaling from 1x to maxMultiplier over 30 days
-  const maxDays = 30;
-  const multiplier = Math.min(1 + (daysInPosition / maxDays) * (maxMultiplier - 1), maxMultiplier);
-  
-  return (baseAmount * BigInt(Math.floor(multiplier * 100))) / 100n;
+  if (totalDepositedSats === 0n) return 0n;
+  const depositorPool = (totalYieldPool * CONTRACT.YIELD_DEPOSITORS_PCT) / CONTRACT.PCT_DENOM;
+  return (depositorPool * principalSats) / totalDepositedSats;
+}
+
+// =====================================================================
+//  SCORING
+// =====================================================================
+
+/**
+ * Compute score: principal_sats × t_effective_scaled / 100
+ * Matches compute_score_for() in vault_core.cairo.
+ */
+export function computeScore(principalSats: bigint, tEffective: bigint): bigint {
+  if (tEffective === 0n || principalSats === 0n) return 0n;
+  return (principalSats * tEffective) / 100n;
+}
+
+// =====================================================================
+//  CLAIM
+// =====================================================================
+
+export interface ClaimBreakdown {
+  gross: bigint;
+  fee: bigint;
+  net: bigint;
+  feePercent: number;
+  canClaim: boolean;
+  reason?: string;
 }
 
 /**
- * Convert BTC to satoshis
+ * Breakdown for a yield claim. Mirrors claim_yield() in vault_core.cairo.
  */
-export function btcToSatoshis(btc: string): bigint {
-  const btcNum = parseFloat(btc);
-  return BigInt(Math.floor(btcNum * 100_000_000));
+export function getClaimBreakdown(
+  claimableYield: bigint,
+  currentBlock: bigint,
+  lastClaimBlock: bigint,
+): ClaimBreakdown {
+  if (claimableYield < CONTRACT.MIN_CLAIM_SATS) {
+    return {
+      gross: claimableYield,
+      fee: 0n,
+      net: 0n,
+      feePercent: 1,
+      canClaim: false,
+      reason: `Minimum claim is 1,000 sats (you have ${claimableYield} sats)`,
+    };
+  }
+
+  const cooldownPassed =
+    lastClaimBlock === 0n ||
+    currentBlock >= lastClaimBlock + CONTRACT.CLAIM_COOLDOWN_BLOCKS;
+
+  if (!cooldownPassed) {
+    const blocksLeft = lastClaimBlock + CONTRACT.CLAIM_COOLDOWN_BLOCKS - currentBlock;
+    const hoursLeft = Number(blocksLeft) / Number(CONTRACT.BLOCKS_PER_DAY) * 24;
+    return {
+      gross: claimableYield,
+      fee: 0n,
+      net: 0n,
+      feePercent: 1,
+      canClaim: false,
+      reason: `Cooldown active — ${hoursLeft.toFixed(1)}h remaining`,
+    };
+  }
+
+  const fee = (claimableYield * CONTRACT.CLAIM_FEE_BPS) / CONTRACT.BPS_DENOM;
+  return {
+    gross: claimableYield,
+    fee,
+    net: claimableYield - fee,
+    feePercent: 1,
+    canClaim: true,
+  };
 }
 
+// =====================================================================
+//  IY TOKENS
+// =====================================================================
+
 /**
- * Convert satoshis to BTC string
+ * IY tokens minted on deposit: 1 IY (1e18) per 1000 sats.
  */
+export function getIYMintAmount(depositSats: bigint): bigint {
+  return (depositSats / 1000n) * CONTRACT.IY_PER_1000_SATS;
+}
+
+// =====================================================================
+//  SEASON
+// =====================================================================
+
+export interface SeasonProgress {
+  blocksElapsed: bigint;
+  blocksTotal: bigint;
+  blocksRemaining: bigint;
+  percentComplete: number;
+  isOver: boolean;
+}
+
+export function getSeasonProgress(
+  currentBlock: bigint,
+  seasonStartBlock: bigint,
+): SeasonProgress {
+  const blocksElapsed = currentBlock > seasonStartBlock
+    ? currentBlock - seasonStartBlock
+    : 0n;
+  const blocksTotal = CONTRACT.SEASON_BLOCKS;
+  const blocksRemaining = blocksElapsed >= blocksTotal
+    ? 0n
+    : blocksTotal - blocksElapsed;
+  const percentComplete = Math.min(
+    Number((blocksElapsed * 100n) / blocksTotal),
+    100,
+  );
+
+  return {
+    blocksElapsed,
+    blocksTotal,
+    blocksRemaining,
+    percentComplete,
+    isOver: blocksElapsed >= blocksTotal,
+  };
+}
+
+// =====================================================================
+//  FORMATTING HELPERS
+// =====================================================================
+
+/** 1 BTC = 100,000,000 sats */
 export function satoshisToBTC(satoshis: bigint): string {
-  const btc = Number(satoshis) / 100_000_000;
-  return btc.toFixed(8);
+  const btc = Number(satoshis) / 1e8;
+  if (btc === 0) return '0.00000000';
+  if (btc < 0.001) return btc.toFixed(8);
+  return btc.toFixed(6);
 }
 
-/**
- * Format satoshis for display (e.g., "0.001 BTC")
- */
 export function formatBTC(satoshis: bigint): string {
   return `${satoshisToBTC(satoshis)} BTC`;
 }
 
-/**
- * Format USD value given BTC price
- */
+export function formatSats(satoshis: bigint): string {
+  return `${satoshis.toLocaleString()} sats`;
+}
+
+export function formatBTCInput(btcString: string): bigint {
+  const btc = parseFloat(btcString);
+  if (isNaN(btc) || btc <= 0) return 0n;
+  return BigInt(Math.floor(btc * 1e8));
+}
+
+export function formatScore(score: bigint): string {
+  if (score === 0n) return '0';
+  if (score > 1_000_000_000n) return `${(Number(score) / 1e9).toFixed(2)}B`;
+  if (score > 1_000_000n) return `${(Number(score) / 1e6).toFixed(2)}M`;
+  if (score > 1_000n) return `${(Number(score) / 1e3).toFixed(2)}K`;
+  return score.toString();
+}
+
 export function formatUSD(satoshis: bigint, btcPriceUSD: number): string {
-  const btc = Number(satoshis) / 100_000_000;
+  const btc = Number(satoshis) / 1e8;
   const usd = btc * btcPriceUSD;
-  return `$${usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/**
- * Calculate APY display
- */
-export function formatAPY(apy: number): string {
-  return `${(apy * 100).toFixed(2)}% APY`;
-}
-
-/**
- * Project vault growth over time
- */
-export function projectVaultGrowth(
-  initialPrincipal: bigint,
-  dailyEntryFees: bigint,
-  apy: number,
-  days: number,
-): {
-  principal: bigint;
-  totalYield: bigint;
-  totalValue: bigint;
-} {
-  // Simple projection (doesn't account for compounding perfectly)
-  const dailyYieldRate = apy / 365;
-  
-  let principal = initialPrincipal;
-  let totalYield = 0n;
-  
-  for (let day = 0; day < days; day++) {
-    // Add entry fees
-    principal += dailyEntryFees;
-    
-    // Calculate daily yield on principal
-    const dailyYield = (principal * BigInt(Math.floor(dailyYieldRate * 10000))) / 10000n;
-    totalYield += dailyYield;
-  }
-  
-  return {
-    principal,
-    totalYield,
-    totalValue: principal + totalYield,
-  };
-}
-
-/**
- * Vault statistics
- */
-export interface VaultStats {
-  totalPrincipal: bigint;
-  accumulatedYield: bigint;
-  totalValue: bigint;
-  totalEntries: number;
-  uniquePlayers: number;
-  apy: number;
-}
-
-/**
- * Create default vault stats
- */
-export function createVaultStats(overrides: Partial<VaultStats> = {}): VaultStats {
-  return {
-    totalPrincipal: 0n,
-    accumulatedYield: 0n,
-    totalValue: 0n,
-    totalEntries: 0,
-    uniquePlayers: 0,
-    apy: 0.05,
-    ...overrides,
-  };
+export function formatAddress(address: string): string {
+  if (!address || address.length < 10) return address;
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }

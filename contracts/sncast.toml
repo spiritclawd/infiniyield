@@ -1,0 +1,11 @@
+[default]
+url = "https://starknet-sepolia.public.blastapi.io/rpc/v0_7"
+accounts-file = "~/.starknet_accounts/starknet_open_zeppelin_accounts.json"
+wait = true
+wait-params = { timeout = 120, retry-interval = 5 }
+
+[profile.deployer]
+url = "https://starknet-sepolia.public.blastapi.io/rpc/v0_7"
+account = "sepolia-deployer"
+accounts-file = "~/.starknet_accounts/starknet_open_zeppelin_accounts.json"
+wait = true

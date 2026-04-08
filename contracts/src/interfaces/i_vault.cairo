@@ -41,6 +41,9 @@ pub trait IVault<TContractState> {
 
     // --- Views ---
 
+    /// Set IY token address — owner-only, called once after IYToken deploy
+    fn set_iy_token(ref self: TContractState, iy_token: ContractAddress);
+
     fn get_score(self: @TContractState, addr: ContractAddress) -> u256;
     fn get_leaderboard(self: @TContractState) -> Array<LeaderboardEntry>;
     fn get_depositor_info(self: @TContractState, addr: ContractAddress) -> DepositorInfo;

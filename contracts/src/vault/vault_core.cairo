@@ -722,5 +722,19 @@ pub mod VaultCore {
         fn get_current_block(self: @ContractState) -> u64 {
             get_block_number()
         }
+
+        /// === SET IY TOKEN ===
+        /// Owner-only. Called once after IYToken is deployed with the vault address.
+        /// Resolves the circular constructor dependency:
+        ///   VaultCore needs IYToken address → deploy with 0x0 first
+        ///   IYToken needs VaultCore address → deploy second
+        ///   then call set_iy_token(iy_token_addr)
+        fn set_iy_token(ref self: ContractState, iy_token: ContractAddress) {
+            let caller = get_caller_address();
+            assert(caller == self.owner.read(), 'Vault: only owner');
+            let zero: ContractAddress = core::num::traits::Zero::zero();
+            assert(iy_token != zero, 'Vault: iy_token zero');
+            self.iy_token.write(iy_token);
+        }
     }
 }
