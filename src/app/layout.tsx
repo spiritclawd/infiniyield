@@ -5,15 +5,22 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'INFINIYIELD — Trap the Whale',
+  title: 'INFINIYIELD — Permanent Capital. Perpetual Yield.',
   description:
-    'Deposit wBTC forever. Earn yield from DeFi. Out-commit everyone on the leaderboard.',
-  keywords: ['Starknet', 'Bitcoin', 'DeFi', 'Yield', 'wBTC', 'Trap the Whale'],
+    'The most powerful commitment in DeFi. Your wBTC enters. It never leaves. That\'s the point. Permanent capital, perpetual yield, no exit.',
+  keywords: ['Starknet', 'Bitcoin', 'DeFi', 'Yield', 'wBTC', 'Trap the Whale', 'Permanent Capital', 'INFINIYIELD'],
   authors: [{ name: 'INFINIYIELD' }],
   openGraph: {
-    title: 'INFINIYIELD — Trap the Whale',
-    description: 'Deposit wBTC forever. Earn yield from DeFi. Out-commit everyone.',
+    title: 'INFINIYIELD — Permanent Capital. Perpetual Yield. No Exit.',
+    description:
+      'Your wBTC enters. It never leaves. That\'s the point. Epoch-based leaderboard, perpetual yield, permanent commitment.',
     type: 'website',
+    siteName: 'INFINIYIELD',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'INFINIYIELD — Permanent Capital. Perpetual Yield.',
+    description: 'The most powerful commitment in DeFi. Lock wBTC forever, earn yield every epoch.',
   },
 };
 

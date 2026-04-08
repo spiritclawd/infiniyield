@@ -7,6 +7,9 @@ import {
   formatBTC,
   formatScore,
   formatBTCInput,
+  estimateVesuYield,
+  VESU_WBTC_APY,
+  formatAPY,
 } from '@/lib/money-flow';
 
 // ─────────────────────────────────────────────
@@ -170,6 +173,9 @@ export default function VaultSimulator() {
   const top10Pct = yourRank && yourRank <= 10 ? rankYieldPct(yourRank) : 0;
   const totalEarnPct = top10Pct + yourProRata * 0.2; // 20% of pool is pro-rata
 
+  // Vesu estimated yield
+  const vesuYieldSats = estimateVesuYield(yourSats, yourDays);
+
   const maxScore = simulation.length > 0 ? simulation[0].score : 1n;
 
   return (
@@ -263,12 +269,36 @@ export default function VaultSimulator() {
 
             {/* Score detail */}
             {yourEntry && (
-              <div className="text-xs text-[#64748B] mb-5 font-mono bg-[#0D0F1A] border border-[#1E2035] rounded-lg px-4 py-3">
+              <div className="text-xs text-[#64748B] mb-3 font-mono bg-[#0D0F1A] border border-[#1E2035] rounded-lg px-4 py-3">
                 <span className="text-white">{formatBTC(yourEntry.principalSats)}</span>
                 {' × '}
                 <span className="text-[#6C5CE7]">{computeTEffective(yourDays).toString()}</span>
                 {' / 100 = '}
                 <span className="text-[#F7931A]">score {formatScore(yourEntry.score)}</span>
+              </div>
+            )}
+
+            {/* Vesu yield estimate */}
+            {yourSats > 0n && (
+              <div className="mb-5 bg-[#0D0F1A] border border-[#1E2035] rounded-lg px-4 py-3 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-[#64748B] uppercase tracking-wider mb-1">
+                    Estimated yield earned
+                  </div>
+                  <div className="text-base font-bold font-mono text-[#F7931A]">
+                    +{formatBTC(vesuYieldSats)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-[#64748B] mb-1">Vesu wBTC APY</div>
+                  <div className="text-sm font-mono text-[#00D8A4]">
+                    {formatAPY(VESU_WBTC_APY)}
+                    <span className="text-[10px] text-[#64748B] ml-1">/ yr</span>
+                  </div>
+                  <div className="text-[10px] text-[#64748B] mt-0.5">
+                    Prime Pool · Starknet
+                  </div>
+                </div>
               </div>
             )}
 

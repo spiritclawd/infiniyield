@@ -292,3 +292,40 @@ export function formatAddress(address: string): string {
   if (!address || address.length < 10) return address;
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
+
+// =====================================================================
+//  VESU YIELD ESTIMATION
+//  Real data from api.vesu.xyz/markets (Prime Pool, Starknet Mainnet)
+//  WBTC Supply APY: 0.14% | SolvBTC BTCFi APR (Clearstar): 2.00%
+//  We use 2.0% as our reference rate (conservative BTC lending yield)
+// =====================================================================
+
+/** Real Vesu wBTC APY — Prime Pool on Starknet: 0.14% annualized supply APY.
+ *  For a more realistic demo (SolvBTC BTCFi / Clearstar Reactor): 2.00%.
+ *  We expose the conservative mainnet number here. */
+export const VESU_WBTC_APY = 0.0014; // 0.14% annually (Vesu Prime Pool, real data)
+
+/** Vesu SolvBTC BTCFi APY for reference (Clearstar Reactor): 2.00% */
+export const VESU_SOLVBTC_APY = 0.02;
+
+/**
+ * Estimate yield earned on a BTC principal over N days at Vesu APY.
+ *
+ * @param principalSats  Deposited amount in satoshis
+ * @param days           Number of days deposited
+ * @returns              Estimated yield in satoshis (floor-rounded)
+ */
+export function estimateVesuYield(principalSats: bigint, days: number): bigint {
+  if (principalSats === 0n || days === 0) return 0n;
+  const dailyRate = VESU_WBTC_APY / 365;
+  const yieldBtc = Number(principalSats) * dailyRate * days;
+  return BigInt(Math.floor(yieldBtc));
+}
+
+/**
+ * Format APY as a human-readable percentage string.
+ * e.g. 0.0014 → "0.14%"
+ */
+export function formatAPY(apy: number): string {
+  return `${(apy * 100).toFixed(2)}%`;
+}

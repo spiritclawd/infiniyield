@@ -279,7 +279,7 @@ body {
   animation: depth-bar-fill 1s ease-out both;
 }
 
-/* Warning banner */
+/* Warning / commitment banner */
 .warning-banner {
   background: linear-gradient(90deg, #7A4A0D22, #F7931A11, #7A4A0D22);
   border: 1px solid #7A4A0D;
@@ -313,4 +313,92 @@ body {
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 4px;
+}
+
+/* =====================================================================
+   MOBILE RESPONSIVENESS — max-width: 768px
+   ===================================================================== */
+
+@media (max-width: 768px) {
+
+  /* Feature cards: stack vertically */
+  .feature-cards {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Stats bar: wrap into 2 columns */
+  .stats-bar {
+    flex-wrap: wrap;
+  }
+
+  .stats-item {
+    flex: 1 1 calc(50% - 1px);
+    border-right: 1px solid #1E2035;
+    border-bottom: 1px solid #1E2035;
+    min-width: 0;
+    padding: 12px 14px;
+  }
+
+  /* Reset last-child border override so wrapping looks clean */
+  .stats-item:last-child {
+    border-right: none;
+  }
+
+  /* Leaderboard: hide score column on mobile */
+  .lb-col-score {
+    display: none !important;
+  }
+
+  /* Leaderboard grid: drop score column */
+  .leaderboard-header,
+  .leaderboard-row {
+    grid-template-columns: 40px 1fr 110px 80px !important;
+  }
+
+  /* Deposit form full width on mobile */
+  .deposit-form {
+    max-width: 100% !important;
+  }
+
+  /* Balance grid: single column on very small screens */
+  .balance-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Hero CTA buttons: stack vertically */
+  .hero-cta {
+    flex-direction: column !important;
+    align-items: center;
+  }
+
+  .hero-cta .btn-vault,
+  .hero-cta .btn-ghost {
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+  }
+
+  /* Simulator inputs: handled by VaultSimulator internal styles,
+     but if they use flex we ensure column stacking */
+  .simulator-inputs {
+    flex-direction: column !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* On very small phones, hide BTC locked column too — keep rank + address + yield% */
+  .lb-col-btc {
+    display: none !important;
+  }
+
+  .leaderboard-header,
+  .leaderboard-row {
+    grid-template-columns: 40px 1fr 80px !important;
+  }
+
+  /* Stats bar: single column */
+  .stats-item {
+    flex: 1 1 100%;
+    border-right: none;
+  }
 }

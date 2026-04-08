@@ -1,6 +1,16 @@
 // Mock Yield Source — simulates Vesu/DeFi yield for testing
 // The vault deposits wBTC here; owner can simulate_yield to add fake yield
 // In production, this would be replaced by a real Vesu integration
+//
+// Real Vesu wBTC APY (Prime Pool, Starknet Mainnet): ~0.14% annually
+// SolvBTC BTCFi APR (Clearstar Reactor): ~2.00% annually
+// Source: api.vesu.xyz/markets
+
+/// Extra callable interface — exposes add_yield for sncast demo invocations
+#[starknet::interface]
+pub trait IMockYieldSourceExtra<TContractState> {
+    fn add_yield(ref self: TContractState, amount: u256);
+}
 
 #[starknet::contract]
 pub mod MockYieldSource {
@@ -79,6 +89,20 @@ pub mod MockYieldSource {
 
         fn get_accumulated_yield(self: @ContractState) -> u256 {
             self.accumulated_yield.read()
+        }
+    }
+
+    /// Extra owner-callable entry points (not part of IYieldSource interface)
+    #[abi(embed_v0)]
+    impl MockYieldSourceExtraImpl of super::IMockYieldSourceExtra<ContractState> {
+        /// Alias for simulate_yield — inject yield for demo/testing.
+        /// Called by sncast: sncast invoke --function add_yield --arguments '<low> <high>'
+        fn add_yield(ref self: ContractState, amount: u256) {
+            let caller = starknet::get_caller_address();
+            assert(caller == self.owner.read(), 'MockYield: only owner');
+            let new_yield = self.accumulated_yield.read() + amount;
+            self.accumulated_yield.write(new_yield);
+            self.emit(YieldSimulated { amount, new_total: new_yield });
         }
     }
 }

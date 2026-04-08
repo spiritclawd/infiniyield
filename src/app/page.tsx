@@ -49,6 +49,106 @@ function satsToBTCDisplay(sats: bigint): string {
 }
 
 // =====================================================================
+//  3-Step Onboarding Component
+// =====================================================================
+
+interface OnboardingStepsProps {
+  step1Done: boolean;
+  step2Done: boolean;
+}
+
+function OnboardingSteps({ step1Done, step2Done }: OnboardingStepsProps) {
+  const steps = [
+    {
+      num: 1,
+      label: 'Connect your Cartridge wallet',
+      done: step1Done,
+    },
+    {
+      num: 2,
+      label: 'Get testnet wBTC from the faucet',
+      done: step2Done,
+    },
+    {
+      num: 3,
+      label: 'Lock wBTC forever — claim yield each epoch',
+      done: false, // Step 3 is the form itself
+    },
+  ];
+
+  return (
+    <div style={{ marginBottom: '32px' }}>
+      {steps.map((step, idx) => {
+        const isActive = (idx === 0 && !step1Done) || (idx === 1 && step1Done && !step2Done) || (idx === 2 && step1Done && step2Done);
+        const isDone = step.done;
+
+        return (
+          <div
+            key={step.num}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '16px',
+              position: 'relative',
+            }}
+          >
+            {/* Connecting line */}
+            {idx < steps.length - 1 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '19px',
+                  top: '40px',
+                  width: '2px',
+                  height: '32px',
+                  background: isDone ? '#00D8A4' : '#1E2035',
+                  transition: 'background 0.3s',
+                }}
+              />
+            )}
+
+            {/* Step circle */}
+            <div
+              style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                border: `2px solid ${isDone ? '#00D8A4' : isActive ? '#F7931A' : '#1E2035'}`,
+                background: isDone ? '#00D8A422' : isActive ? '#F7931A11' : '#0D0F1A',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'all 0.3s',
+                fontSize: isDone ? '18px' : '14px',
+                fontWeight: '700',
+                color: isDone ? '#00D8A4' : isActive ? '#F7931A' : '#64748B',
+              }}
+            >
+              {isDone ? '✓' : step.num}
+            </div>
+
+            {/* Step label */}
+            <div
+              style={{
+                paddingTop: '10px',
+                paddingBottom: '32px',
+                color: isDone ? '#00D8A4' : isActive ? '#F8FAFC' : '#64748B',
+                fontSize: '15px',
+                fontWeight: isDone || isActive ? '600' : '400',
+                transition: 'color 0.3s',
+              }}
+            >
+              {step.label}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// =====================================================================
 //  Main Page
 // =====================================================================
 
@@ -210,7 +310,7 @@ export default function Home() {
   };
 
   // ---------------------------------------------------------------
-  //  Harvest (seasonal)
+  //  Harvest (epochal)
   // ---------------------------------------------------------------
 
   const handleHarvest = async () => {
@@ -251,6 +351,10 @@ export default function Home() {
   const maxScore = leaderboard.length > 0
     ? leaderboard.reduce((m, e) => (e.score > m ? e.score : m), 1n)
     : 1n;
+
+  // Onboarding step completion
+  const step1Done = wallet.connected;
+  const step2Done = wallet.connected && wallet.wbtcBalance > 0n;
 
   // ---------------------------------------------------------------
   //  Render
@@ -306,7 +410,7 @@ export default function Home() {
           <h1
             className="glow-title"
             style={{
-              fontSize: 'clamp(48px, 10vw, 96px)',
+              fontSize: 'clamp(40px, 10vw, 96px)',
               fontWeight: '900',
               letterSpacing: '-0.02em',
               color: '#F7931A',
@@ -317,20 +421,20 @@ export default function Home() {
             INFINIYIELD
           </h1>
 
-          {/* Subtitle */}
+          {/* Subtitle — permanence as the hook */}
           <p
             style={{
-              fontSize: 'clamp(16px, 2.5vw, 22px)',
+              fontSize: 'clamp(15px, 2.5vw, 22px)',
               color: '#94A3B8',
               lineHeight: 1.6,
-              maxWidth: '600px',
+              maxWidth: '620px',
               margin: '0 auto 16px',
             }}
           >
-            The vault that never closes.
+            Permanent capital. Perpetual yield. No exit.
             <br />
             <span style={{ color: '#F8FAFC', fontWeight: 500 }}>
-              wBTC locked forever, yield flowing forever.
+              Your wBTC enters. It never leaves. That&apos;s the point.
             </span>
           </p>
 
@@ -344,11 +448,11 @@ export default function Home() {
               fontWeight: 600,
             }}
           >
-            Commit capital · Earn yield · Every season, the deepest whales win
+            The most powerful commitment in DeFi
           </p>
 
           {/* CTA */}
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div className="hero-cta" style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button
               className="btn-vault"
               onClick={() => depositSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
@@ -386,7 +490,7 @@ export default function Home() {
           <p style={{ color: '#6C5CE7', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
             Protocol
           </p>
-          <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '16px' }}>
             Trap the Whale
           </h2>
           <p style={{ color: '#64748B', fontSize: '18px', maxWidth: '500px', margin: '0 auto' }}>
@@ -394,8 +498,8 @@ export default function Home() {
           </p>
         </div>
 
-        {/* 3 cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '48px' }}>
+        {/* 4 feature cards */}
+        <div className="feature-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '48px' }}>
           {/* Lock Forever */}
           <div className="ocean-card" style={{ padding: '32px' }}>
             <div style={{ fontSize: '36px', marginBottom: '20px' }}>🔒</div>
@@ -421,7 +525,7 @@ export default function Home() {
               Your BTC generates yield through Vesu DeFi
               <span style={{ color: '#00D8A4', fontWeight: 600 }}> every block</span>.
               <br /><br />
-              Each season the pool resets, yield flows again.
+              Each epoch the pool resets, yield flows again.
             </p>
             <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #00D8A444, transparent)' }} />
           </div>
@@ -436,6 +540,22 @@ export default function Home() {
               Top 10 depositors share
               <span style={{ color: '#6C5CE7', fontWeight: 600 }}> 70% of yield</span>.
               Quadratic weighting — the more you commit, the more you earn.
+            </p>
+            <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #6C5CE744, transparent)' }} />
+          </div>
+
+          {/* IY Token */}
+          <div className="ocean-card" style={{ padding: '32px' }}>
+            <div style={{ fontSize: '36px', marginBottom: '20px' }}>∞</div>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
+              IY Token
+            </h3>
+            <p style={{ color: '#64748B', lineHeight: 1.7 }}>
+              Every deposit mints IY tokens.{' '}
+              <span style={{ color: '#6C5CE7', fontWeight: 600 }}>1 IY per 1,000 sats.</span>
+              {' '}IY is your proof of commitment — it powers the compound leaderboard system.
+              <br /><br />
+              Pure math, no speculation.
             </p>
             <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #6C5CE744, transparent)' }} />
           </div>
@@ -456,7 +576,7 @@ export default function Home() {
             </div>
           </div>
           <div className="stats-item">
-            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>Season</div>
+            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>Epoch</div>
             <div style={{ color: '#6C5CE7', fontWeight: '700', fontSize: '18px' }}>
               #{season.seasonNumber > 0n ? season.seasonNumber.toString() : '—'}
             </div>
@@ -474,10 +594,70 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* Eternal framing */}
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <p style={{ color: '#64748B', fontSize: '13px', letterSpacing: '0.05em' }}>
+            Every 60 days, scores reset. Your BTC never leaves.
+          </p>
+          <p style={{ color: '#2D2660', fontSize: '12px', marginTop: '4px' }}>
+            The vault is eternal. Epochs reset scores — principals stay forever.
+          </p>
+        </div>
       </section>
 
       {/* ============================================================
-          SECTION 3: LEADERBOARD — THE DEPTHS
+          SECTION 3: HOW WINNING WORKS — video + simulator
+          ============================================================ */}
+      <section style={{ padding: '100px 24px', background: '#07080F' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+
+          {/* Header */}
+          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+            <p style={{ color: '#6C5CE7', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
+              Mechanics
+            </p>
+            <h2 style={{ fontSize: 'clamp(28px, 5vw, 48px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '12px' }}>
+              How Winning Works
+            </h2>
+            <p style={{ color: '#64748B', fontSize: '16px' }}>
+              Score = principal × time. Commit more, commit earlier. The deepest whale wins.
+            </p>
+          </div>
+
+          {/* Video embed */}
+          <div style={{
+            position: 'relative',
+            width: '100%',
+            background: '#0D0F1A',
+            border: '1px solid #1E2035',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            marginBottom: '48px',
+            aspectRatio: '16/9',
+          }}>
+            <video
+              controls
+              autoPlay={false}
+              muted
+              playsInline
+              loop={false}
+              style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+              poster=""
+            >
+              <source src="/infiniyield/winning.mp4" type="video/mp4" />
+              Your browser does not support video.
+            </video>
+          </div>
+
+          {/* Simulator */}
+          <VaultSimulator />
+
+        </div>
+      </section>
+
+      {/* ============================================================
+          SECTION 4: LEADERBOARD — THE DEPTHS
           ============================================================ */}
       <section
         id="leaderboard"
@@ -547,6 +727,7 @@ export default function Home() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {/* Header */}
               <div
+                className="leaderboard-header"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '48px 1fr 140px 120px 90px',
@@ -560,9 +741,9 @@ export default function Home() {
               >
                 <span>#</span>
                 <span>Address</span>
-                <span style={{ textAlign: 'right' }}>wBTC Locked</span>
-                <span style={{ textAlign: 'right' }}>Score</span>
-                <span style={{ textAlign: 'right' }}>Yield Share</span>
+                <span className="lb-col-btc" style={{ textAlign: 'right' }}>wBTC Locked</span>
+                <span className="lb-col-score" style={{ textAlign: 'right' }}>Score</span>
+                <span style={{ textAlign: 'right' }}>Yield %</span>
               </div>
 
               {leaderboard.map((entry, idx) => {
@@ -575,6 +756,7 @@ export default function Home() {
                 return (
                   <div
                     key={entry.addr}
+                    className="leaderboard-row"
                     style={{
                       background: isWinner
                         ? 'linear-gradient(90deg, #1a0e0022, #F7931A08)'
@@ -635,14 +817,14 @@ export default function Home() {
                     </div>
 
                     {/* wBTC */}
-                    <div style={{ textAlign: 'right', fontWeight: '600', color: '#F7931A', fontSize: '14px' }}>
+                    <div className="lb-col-btc" style={{ textAlign: 'right', fontWeight: '600', color: '#F7931A', fontSize: '14px' }}>
                       {entry.principal != null
                         ? `${satsToBTCDisplay(entry.principal)} BTC`
                         : '—'}
                     </div>
 
                     {/* Score */}
-                    <div style={{ textAlign: 'right', color: '#94A3B8', fontSize: '14px' }}>
+                    <div className="lb-col-score" style={{ textAlign: 'right', color: '#94A3B8', fontSize: '14px' }}>
                       {formatScore(entry.score)}
                     </div>
 
@@ -687,56 +869,6 @@ export default function Home() {
       </section>
 
       {/* ============================================================
-          SECTION 4: HOW WINNING WORKS — video + simulator
-          ============================================================ */}
-      <section style={{ padding: '100px 24px', background: '#07080F' }}>
-        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-
-          {/* Header */}
-          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
-            <p style={{ color: '#6C5CE7', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
-              Mechanics
-            </p>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 48px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '12px' }}>
-              How Winning Works
-            </h2>
-            <p style={{ color: '#64748B', fontSize: '16px' }}>
-              Score = principal × time. Commit more, commit earlier. The deepest whale wins.
-            </p>
-          </div>
-
-          {/* Video embed */}
-          <div style={{
-            position: 'relative',
-            width: '100%',
-            background: '#0D0F1A',
-            border: '1px solid #1E2035',
-            borderRadius: '16px',
-            overflow: 'hidden',
-            marginBottom: '48px',
-            aspectRatio: '16/9',
-          }}>
-            <video
-              controls
-              autoPlay={false}
-              muted
-              playsInline
-              loop={false}
-              style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
-              poster=""
-            >
-              <source src="/infiniyield/winning.mp4" type="video/mp4" />
-              Your browser does not support video.
-            </video>
-          </div>
-
-          {/* Simulator */}
-          <VaultSimulator />
-
-        </div>
-      </section>
-
-      {/* ============================================================
           SECTION 5: VAULT ENTRY
           ============================================================ */}
       <section
@@ -761,10 +893,13 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Permanent warning */}
+        {/* 3-step onboarding */}
+        <OnboardingSteps step1Done={step1Done} step2Done={step2Done} />
+
+        {/* Permanent commitment — reframed as the hook */}
         <div className="warning-banner" style={{ marginBottom: '32px' }}>
           <span>⚠</span>
-          <span>No withdraw function. This is permanent. The vault never gives back.</span>
+          <span>This is permanent — and that&apos;s exactly why it works.</span>
         </div>
 
         {/* Not deployed notice */}
@@ -830,7 +965,7 @@ export default function Home() {
               </div>
 
               {/* Balances */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div className="balance-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
                 <div style={{ background: '#07080F', borderRadius: '8px', padding: '14px', border: '1px solid #1E2035' }}>
                   <div style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>wBTC Balance</div>
                   <div style={{ color: '#F7931A', fontWeight: '700' }}>
@@ -860,7 +995,7 @@ export default function Home() {
 
         {/* Deposit form */}
         {wallet.connected && (
-          <div className="ocean-card" style={{ padding: '28px', marginBottom: '24px' }}>
+          <div className="ocean-card deposit-form" style={{ padding: '28px', marginBottom: '24px' }}>
             <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '20px', color: '#F8FAFC' }}>
               Lock wBTC Forever
             </h3>
@@ -966,7 +1101,7 @@ export default function Home() {
               🐋 My Position
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+            <div className="balance-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
               <div style={{ background: '#07080F', borderRadius: '8px', padding: '14px', border: '1px solid #1E2035' }}>
                 <div style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', marginBottom: '6px' }}>wBTC Locked</div>
                 <div style={{ color: '#F7931A', fontWeight: '700' }}>{satsToBTCDisplay(depositorInfo.principal)} BTC</div>
@@ -994,7 +1129,7 @@ export default function Home() {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
               <button
                 className="btn-vault"
                 onClick={handleClaim}
@@ -1003,7 +1138,7 @@ export default function Home() {
                   !claimBreakdown?.canClaim ||
                   !CONTRACTS_DEPLOYED
                 }
-                style={{ flex: 1 }}
+                style={{ flex: 1, minWidth: '120px' }}
               >
                 {tx.pending ? 'Claiming…' : '💰 Claim Yield'}
               </button>
@@ -1011,7 +1146,7 @@ export default function Home() {
                 className="btn-ghost"
                 onClick={handleHarvest}
                 disabled={tx.pending || !CONTRACTS_DEPLOYED}
-                style={{ flex: 1 }}
+                style={{ flex: 1, minWidth: '120px' }}
               >
                 🌾 Harvest
               </button>
@@ -1021,7 +1156,7 @@ export default function Home() {
       </section>
 
       {/* ============================================================
-          SECTION 5: FOOTER
+          FOOTER
           ============================================================ */}
       <footer
         style={{
@@ -1063,7 +1198,7 @@ export default function Home() {
           </div>
 
           <div style={{ color: '#1E2035', fontSize: '12px', textAlign: 'center' }}>
-            No withdraw function. No refunds. Pure commitment.
+            Permanent capital. Perpetual yield. The vault is eternal.
           </div>
         </div>
       </footer>
