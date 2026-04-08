@@ -176,6 +176,36 @@ export default function VaultSimulator() {
   // Vesu estimated yield
   const vesuYieldSats = estimateVesuYield(yourSats, yourDays);
 
+  // ── Days to full recovery ──────────────────────────────────────────
+  const SEASON_DAYS = 60;
+  const effectiveTotal = totalPrincipal > 0n ? totalPrincipal : yourSats;
+  const dailyPoolGrowthSats = Number(effectiveTotal) * VESU_WBTC_APY / 365;
+
+  const dailyTop10 = yourRank && yourRank <= 10
+    ? dailyPoolGrowthSats * (rankYieldPct(yourRank) / 100)
+    : 0;
+
+  const dailyProRata = totalPrincipal > 0n
+    ? dailyPoolGrowthSats * 0.20 * (Number(yourSats) / Number(totalPrincipal))
+    : 0;
+
+  const dailyYield = dailyTop10 + dailyProRata;
+
+  const daysToRecover = dailyYield > 0 && yourSats > 0n
+    ? Math.ceil(Number(yourSats) / dailyYield)
+    : null;
+
+  const formatRecovery = (days: number | null): string => {
+    if (!days) return '—';
+    if (days > 365 * 500) return '∞';
+    if (days >= 730) return `${(days / 365).toFixed(1)} yrs`;
+    if (days >= 365) return `${(days / 365).toFixed(1)} yr`;
+    return `${days.toLocaleString()} days`;
+  };
+
+  // suppress unused warning for SEASON_DAYS
+  void SEASON_DAYS;
+
   const maxScore = simulation.length > 0 ? simulation[0].score : 1n;
 
   return (
@@ -246,7 +276,7 @@ export default function VaultSimulator() {
         {yourSats > 0n ? (
           <>
             {/* Result summary */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
               <div className="bg-[#0D0F1A] border border-[#1E2035] rounded-xl p-4 text-center">
                 <div className="text-2xl font-bold font-mono text-[#F7931A]">
                   {yourRank ? (yourRank <= 10 ? `#${yourRank}` : `>${simulation.length}`) : '—'}
@@ -264,6 +294,13 @@ export default function VaultSimulator() {
                   {yourProRata.toFixed(2)}%
                 </div>
                 <div className="text-xs text-[#64748B] mt-1">Pro-rata share</div>
+              </div>
+              <div className="bg-[#0D0F1A] border border-[#1E2035] rounded-xl p-4 text-center">
+                <div className="text-2xl font-bold font-mono" style={{ color: daysToRecover && daysToRecover < 365*10 ? '#F7931A' : '#64748B' }}>
+                  {formatRecovery(daysToRecover)}
+                </div>
+                <div className="text-xs text-[#64748B] mt-1">Days to full recovery</div>
+                <div className="text-[10px] text-[#334155] mt-0.5">at {(VESU_WBTC_APY * 100).toFixed(2)}% Vesu APY</div>
               </div>
             </div>
 

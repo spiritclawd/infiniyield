@@ -30,7 +30,6 @@ import {
 import type ControllerProvider from '@cartridge/controller';
 import WhaleAsset from '@/components/WhaleAsset';
 import BitcoinGlow from '@/components/BitcoinGlow';
-import BubbleField from '@/components/BubbleField';
 import DepthLines from '@/components/DepthLines';
 
 // =====================================================================
@@ -379,20 +378,19 @@ export default function Home() {
           padding: '0 24px',
         }}
       >
-        {/* Depth lines background */}
-        <DepthLines />
+        {/* Depth lines — barely visible */}
+        <div style={{ opacity: 0.15 }}>
+          <DepthLines />
+        </div>
 
-        {/* Bubbles */}
-        <BubbleField count={25} />
-
-        {/* Whale silhouette — barely visible, far right */}
+        {/* Whale silhouette — minimal */}
         <div
           className="whale-drift"
           style={{
             position: 'absolute',
             bottom: '15%',
             right: '-40px',
-            opacity: 0.12,
+            opacity: 0.06,
             pointerEvents: 'none',
           }}
         >
@@ -406,14 +404,13 @@ export default function Home() {
             <BitcoinGlow size={72} />
           </div>
 
-          {/* Title */}
+          {/* Title — raw weight, no glow noise */}
           <h1
-            className="glow-title"
             style={{
               fontSize: 'clamp(40px, 10vw, 96px)',
               fontWeight: '900',
-              letterSpacing: '-0.02em',
-              color: '#F7931A',
+              letterSpacing: '-0.03em',
+              color: '#FFF8F0',
               lineHeight: 1,
               marginBottom: '24px',
             }}
@@ -421,42 +418,36 @@ export default function Home() {
             INFINIYIELD
           </h1>
 
-          {/* Subtitle — permanence as the hook */}
+          {/* Subtitle — direct, two lines */}
           <p
             style={{
-              fontSize: 'clamp(15px, 2.5vw, 22px)',
-              color: '#94A3B8',
-              lineHeight: 1.6,
-              maxWidth: '620px',
-              margin: '0 auto 16px',
+              fontSize: 'clamp(16px, 2.5vw, 20px)',
+              color: '#64748B',
+              lineHeight: 1.5,
+              maxWidth: '560px',
+              margin: '0 auto 12px',
             }}
           >
             Permanent capital. Perpetual yield. No exit.
-            <br />
-            <span style={{ color: '#F8FAFC', fontWeight: 500 }}>
-              Your wBTC enters. It never leaves. That&apos;s the point.
-            </span>
           </p>
-
           <p
             style={{
-              fontSize: '15px',
-              color: '#6C5CE7',
-              marginBottom: '48px',
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
+              fontSize: 'clamp(15px, 2vw, 17px)',
+              color: '#94A3B8',
+              maxWidth: '560px',
+              margin: '0 auto 48px',
+              lineHeight: 1.5,
             }}
           >
-            The most powerful commitment in DeFi
+            Lock wBTC forever on Starknet — earn yield every epoch, compete for top-10 allocation.
           </p>
 
           {/* CTA */}
-          <div className="hero-cta" style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div className="hero-cta" style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button
               className="btn-vault"
               onClick={() => depositSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
-              style={{ fontSize: '17px', padding: '16px 40px' }}
+              style={{ fontSize: '16px', padding: '14px 36px' }}
             >
               Enter the Vault ↓
             </button>
@@ -468,8 +459,25 @@ export default function Home() {
             </button>
           </div>
 
+          {/* Stat ticker — Bloomberg terminal strip */}
+          <div style={{ marginTop: '40px', display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <span className="stat-chip">
+              <span className="live-dot" />
+              TVL: {season.totalDeposited > 0n ? formatBTC(season.totalDeposited) : '—'}
+            </span>
+            <span className="stat-chip">
+              APY: ~{(0.0312 * 100).toFixed(2)}%
+            </span>
+            <span className="stat-chip">
+              EPOCH: #{season.seasonNumber > 0n ? season.seasonNumber.toString() : '1'}
+            </span>
+            <span className="stat-chip">
+              WHALES: {leaderboard.length > 0 ? leaderboard.length : '—'}
+            </span>
+          </div>
+
           {/* Scroll hint */}
-          <p style={{ marginTop: '64px', color: '#1E2035', fontSize: '13px', letterSpacing: '0.1em' }}>
+          <p style={{ marginTop: '48px', color: '#1E2035', fontSize: '13px', letterSpacing: '0.1em' }}>
             ▼ ▼ ▼
           </p>
         </div>
@@ -487,85 +495,79 @@ export default function Home() {
       >
         {/* Section header */}
         <div style={{ textAlign: 'center', marginBottom: '60px' }}>
-          <p style={{ color: '#6C5CE7', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
-            Protocol
+          <p style={{ color: '#475569', fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '10px', fontWeight: 600, fontFamily: 'monospace' }}>
+            TRAP THE WHALE
           </p>
-          <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '16px' }}>
-            Trap the Whale
+          <h2 style={{ fontSize: 'clamp(28px, 5vw, 48px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '14px', letterSpacing: '-0.02em' }}>
+            Protocol mechanics
           </h2>
-          <p style={{ color: '#64748B', fontSize: '18px', maxWidth: '500px', margin: '0 auto' }}>
+          <p style={{ color: '#64748B', fontSize: '16px', maxWidth: '480px', margin: '0 auto' }}>
             A yield competition built on permanent commitment.
           </p>
         </div>
 
-        {/* 4 feature cards */}
-        <div className="feature-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '48px' }}>
+        {/* 4 feature cards — flat panels */}
+        <div className="feature-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '48px' }}>
           {/* Lock Forever */}
-          <div className="ocean-card" style={{ padding: '32px' }}>
-            <div style={{ fontSize: '36px', marginBottom: '20px' }}>🔒</div>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
+          <div style={{ background: '#0D0F1A', border: '1px solid #1E2035', borderRadius: '10px', padding: '28px' }}>
+            <div style={{ width: '28px', height: '28px', background: '#F7931A22', border: '1px solid #F7931A44', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
+              <span style={{ color: '#F7931A', fontSize: '14px', fontWeight: '700' }}>↓</span>
+            </div>
+            <h3 style={{ fontSize: '17px', fontWeight: '700', color: '#F8FAFC', marginBottom: '10px', letterSpacing: '-0.01em' }}>
               Lock Forever
             </h3>
-            <p style={{ color: '#64748B', lineHeight: 1.7 }}>
-              Deposit wBTC. It never comes back.
-              <span style={{ color: '#F7931A', fontWeight: 600 }}> The game is commitment.</span>
-              <br /><br />
-              No rug. No exit. No second thoughts.
+            <p style={{ color: '#64748B', lineHeight: 1.6, fontSize: '14px' }}>
+              Deposit wBTC. It never comes back. No rug, no exit, no second thoughts. <span style={{ color: '#94A3B8' }}>The game is commitment.</span>
             </p>
-            <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #F7931A44, transparent)' }} />
           </div>
 
           {/* Earn Forever */}
-          <div className="ocean-card" style={{ padding: '32px' }}>
-            <div style={{ fontSize: '36px', marginBottom: '20px' }}>∞</div>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
-              Earn Forever
+          <div style={{ background: '#0D0F1A', border: '1px solid #1E2035', borderRadius: '10px', padding: '28px' }}>
+            <div style={{ width: '28px', height: '28px', background: '#00D8A422', border: '1px solid #00D8A444', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
+              <span style={{ color: '#00D8A4', fontSize: '14px', fontWeight: '700' }}>%</span>
+            </div>
+            <h3 style={{ fontSize: '17px', fontWeight: '700', color: '#F8FAFC', marginBottom: '10px', letterSpacing: '-0.01em' }}>
+              Earn Perpetually
             </h3>
-            <p style={{ color: '#64748B', lineHeight: 1.7 }}>
-              Your BTC generates yield through Vesu DeFi
-              <span style={{ color: '#00D8A4', fontWeight: 600 }}> every block</span>.
-              <br /><br />
-              Each epoch the pool resets, yield flows again.
+            <p style={{ color: '#64748B', lineHeight: 1.6, fontSize: '14px' }}>
+              BTC generates yield via Vesu Finance <span style={{ color: '#00D8A4' }}>every block</span>. Each epoch the pool resets — yield flows again.
             </p>
-            <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #00D8A444, transparent)' }} />
           </div>
 
           {/* Win by Weight */}
-          <div className="ocean-card" style={{ padding: '32px' }}>
-            <div style={{ fontSize: '36px', marginBottom: '20px' }}>🏆</div>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
+          <div style={{ background: '#0D0F1A', border: '1px solid #1E2035', borderRadius: '10px', padding: '28px' }}>
+            <div style={{ width: '28px', height: '28px', background: '#6C5CE722', border: '1px solid #6C5CE744', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
+              <span style={{ color: '#6C5CE7', fontSize: '14px', fontWeight: '700' }}>#</span>
+            </div>
+            <h3 style={{ fontSize: '17px', fontWeight: '700', color: '#F8FAFC', marginBottom: '10px', letterSpacing: '-0.01em' }}>
               Win by Weight
             </h3>
-            <p style={{ color: '#64748B', lineHeight: 1.7 }}>
-              Top 10 depositors share
-              <span style={{ color: '#6C5CE7', fontWeight: 600 }}> 70% of yield</span>.
-              Quadratic weighting — the more you commit, the more you earn.
+            <p style={{ color: '#64748B', lineHeight: 1.6, fontSize: '14px' }}>
+              Top 10 depositors share <span style={{ color: '#6C5CE7' }}>70% of yield</span> via quadratic weighting. The deeper you go, the more you earn.
             </p>
-            <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #6C5CE744, transparent)' }} />
           </div>
 
           {/* IY Token */}
-          <div className="ocean-card" style={{ padding: '32px' }}>
-            <div style={{ fontSize: '36px', marginBottom: '20px' }}>∞</div>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: '#F8FAFC', marginBottom: '12px' }}>
+          <div style={{ background: '#0D0F1A', border: '1px solid #1E2035', borderRadius: '10px', padding: '28px' }}>
+            <div style={{ width: '28px', height: '28px', background: '#6C5CE722', border: '1px solid #6C5CE744', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
+              <span style={{ color: '#6C5CE7', fontSize: '14px', fontWeight: '700', fontFamily: 'monospace' }}>IY</span>
+            </div>
+            <h3 style={{ fontSize: '17px', fontWeight: '700', color: '#F8FAFC', marginBottom: '10px', letterSpacing: '-0.01em' }}>
               IY Token
             </h3>
-            <p style={{ color: '#64748B', lineHeight: 1.7 }}>
-              Every deposit mints IY tokens.{' '}
-              <span style={{ color: '#6C5CE7', fontWeight: 600 }}>1 IY per 1,000 sats.</span>
-              {' '}IY is your proof of commitment — it powers the compound leaderboard system.
-              <br /><br />
-              Pure math, no speculation.
+            <p style={{ color: '#64748B', lineHeight: 1.6, fontSize: '14px' }}>
+              Every deposit mints IY tokens. <span style={{ color: '#6C5CE7', fontFamily: 'monospace' }}>1 IY / 1,000 sats.</span> Proof of commitment — powers the compound leaderboard.
             </p>
-            <div style={{ marginTop: '24px', height: '2px', background: 'linear-gradient(90deg, #6C5CE744, transparent)' }} />
           </div>
         </div>
 
         {/* Live stats bar */}
         <div className="stats-bar">
           <div className="stats-item">
-            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px' }}>TVL</div>
-            <div style={{ color: '#F7931A', fontWeight: '700', fontSize: '18px' }}>
+            <div style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="live-dot" />TVL
+            </div>
+            <div style={{ color: '#F7931A', fontWeight: '700', fontSize: '18px', fontFamily: 'monospace' }}>
               {season.totalDeposited > 0n ? formatBTC(season.totalDeposited) : '—'}
             </div>
           </div>
@@ -688,14 +690,14 @@ export default function Home() {
         <div style={{ maxWidth: '900px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
           {/* Section header */}
           <div style={{ textAlign: 'center', marginBottom: '60px' }}>
-            <p style={{ color: '#6C5CE7', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
-              Leaderboard
+            <p style={{ color: '#475569', fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '10px', fontWeight: 600, fontFamily: 'monospace' }}>
+              LEADERBOARD
             </p>
-            <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '12px' }}>
+            <h2 style={{ fontSize: 'clamp(32px, 5vw, 48px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '10px', letterSpacing: '-0.02em' }}>
               The Depths
             </h2>
-            <p style={{ color: '#64748B', fontSize: '17px' }}>
-              Who&apos;s committed the most
+            <p style={{ color: '#475569', fontSize: '13px', fontFamily: 'monospace' }}>
+              Top depositors by score · Epoch {season.seasonNumber > 0n ? season.seasonNumber.toString() : '1'} · Live
             </p>
           </div>
 
@@ -758,12 +760,11 @@ export default function Home() {
                     key={entry.addr}
                     className="leaderboard-row"
                     style={{
-                      background: isWinner
-                        ? 'linear-gradient(90deg, #1a0e0022, #F7931A08)'
-                        : '#0E1020',
-                      border: `1px solid ${isWinner ? '#7A4A0D' : '#1E2035'}`,
-                      borderRadius: '10px',
-                      padding: '16px 20px',
+                      background: isWinner ? '#0F0E0A' : '#0D0F1A',
+                      border: '1px solid #1E2035',
+                      borderLeft: `3px solid ${entry.rank === 1 ? '#F7931A' : entry.rank <= 3 ? '#94A3B8' : '#1E2035'}`,
+                      borderRadius: '0 8px 8px 0',
+                      padding: '12px 20px',
                       display: 'grid',
                       gridTemplateColumns: '48px 1fr 140px 120px 90px',
                       gap: '16px',
@@ -882,14 +883,14 @@ export default function Home() {
       >
         {/* Section header */}
         <div style={{ textAlign: 'center', marginBottom: '48px' }}>
-          <p style={{ color: '#F7931A', fontSize: '13px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '12px', fontWeight: 600 }}>
-            Vault
+          <p style={{ color: '#475569', fontSize: '11px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '10px', fontWeight: 600, fontFamily: 'monospace' }}>
+            VAULT
           </p>
-          <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '12px' }}>
-            Go Deeper
+          <h2 style={{ fontSize: 'clamp(32px, 5vw, 48px)', fontWeight: '800', color: '#F8FAFC', marginBottom: '10px', letterSpacing: '-0.02em' }}>
+            Enter the Vault
           </h2>
-          <p style={{ color: '#64748B', fontSize: '17px' }}>
-            Commit your capital. Join the whales.
+          <p style={{ color: '#64748B', fontSize: '15px' }}>
+            Lock wBTC permanently. Earn yield forever.
           </p>
         </div>
 
@@ -1002,8 +1003,8 @@ export default function Home() {
 
             {/* Amount input */}
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ color: '#64748B', fontSize: '13px', display: 'block', marginBottom: '8px' }}>
-                Amount (BTC)
+              <label className="data-label" style={{ display: 'block', marginBottom: '8px' }}>
+                AMOUNT (BTC)
               </label>
               <input
                 type="number"
@@ -1016,41 +1017,31 @@ export default function Home() {
               />
             </div>
 
-            {/* Preview */}
+            {/* Preview — transaction summary */}
             {depositSats > 0n && (
               <div
                 style={{
-                  background: '#07080F',
+                  background: '#080A14',
                   border: '1px solid #1E2035',
-                  borderRadius: '8px',
-                  padding: '16px',
+                  borderRadius: '6px',
+                  padding: '14px 16px',
                   marginBottom: '20px',
+                  fontFamily: 'monospace',
                   fontSize: '13px',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ color: '#64748B' }}>Satoshis</span>
-                  <span style={{ color: '#F8FAFC', fontWeight: 600 }}>{formatSats(depositSats)}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: '#475569' }}>SATS</span>
+                  <span style={{ color: '#F8FAFC' }}>{formatSats(depositSats)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ color: '#64748B' }}>IY Tokens to mint</span>
-                  <span style={{ color: '#6C5CE7', fontWeight: 600 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: '#475569' }}>IY MINT</span>
+                  <span style={{ color: '#6C5CE7' }}>
                     {iyToMint > 0n ? (iyToMint / BigInt(1e15)).toString() : '0'} mIY
                   </span>
                 </div>
-                <div
-                  style={{
-                    marginTop: '12px',
-                    padding: '8px',
-                    background: '#F7931A11',
-                    borderRadius: '6px',
-                    color: '#F7931A',
-                    fontSize: '12px',
-                    textAlign: 'center',
-                    fontWeight: 600,
-                  }}
-                >
-                  ⚠ This action cannot be undone. Ever.
+                <div style={{ borderTop: '1px solid #1E2035', marginTop: '10px', paddingTop: '10px', color: '#F7931A', fontSize: '12px' }}>
+                  ! PERMANENT — this action cannot be undone.
                 </div>
               </div>
             )}
